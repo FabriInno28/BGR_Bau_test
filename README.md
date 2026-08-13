@@ -1,17 +1,34 @@
 # BGR Bauportfolio
 
-Statischer Prototyp für Projektpass, Portfolio, Ressourcen und Finanzplanung.
+Finaler Klausurprototyp vom 14. August 2026.
 
-## Auf GitHub Pages veröffentlichen
+Das Tool verbindet vier Perspektiven:
 
-1. Alle Dateien dieses Ordners in ein GitHub Repository hochladen.
-2. In GitHub unter `Settings > Pages` die Veröffentlichung aus dem Branch `main` und dem Ordner `/root` aktivieren.
-3. Die von GitHub angezeigte Adresse öffnen.
+1. Vorhaben und Planungshorizonte
+2. Rollen und Schnittstellen
+3. Menschen und verfügbare Kapazität
+4. Investitionen und Finanzrahmen
 
-Es ist keine Installation und kein Build Schritt nötig.
+## Excel bleibt die Mutter
 
-## Datenhaltung
+Der importierte Excel Ausgangsstand bleibt unverändert im Prototyp hinterlegt. Alle Anpassungen werden nur als lokaler Arbeitsstand im Browser gespeichert.
 
-Die erfassten Änderungen werden nur lokal im Browser gespeichert. Die verbindliche Ablage bleibt in Excel. Die beiden CSV Exporte können in die bestehende BGR Projektübersicht sowie in eine Rollen und Ressourcentabelle übernommen werden.
+Für jedes bestehende Vorhaben sind möglich:
 
-Archivieren und endgültiges Löschen betreffen ausschliesslich den lokalen Browserstand. Sie verändern keine Excel Datei.
+* Änderungen verwerfen
+* Excel Stand wiederherstellen
+* Archivieren und wieder aktivieren
+* Lokal löschen
+* Letzte Änderung rückgängig machen
+
+Die drei CSV Exporte dienen der kontrollierten Übergabe zurück nach Excel. Es gibt keine automatische Synchronisation.
+
+## GitHub Pages
+
+Alle Dateien aus diesem Ordner in das Hauptverzeichnis eines GitHub Repository hochladen. In GitHub unter `Settings > Pages` die Veröffentlichung aus `main` und `/root` aktivieren.
+
+Es braucht keine Installation, keinen Server, kein Login und keine Datenbank.
+
+## Wichtiger Betriebshinweis
+
+Der Arbeitsstand wird nur im Browser des verwendeten Geräts gespeichert. Andere Geräte sehen diese Änderungen nicht automatisch. Vor einem Gerätewechsel deshalb die CSV Dateien exportieren.
