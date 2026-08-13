@@ -60,6 +60,7 @@ const fieldIds = ["object","measure","category","strategy","phase","horizon","st
 const required = ["object","measure","category","horizon","bgrResponsibility","projectManagement","decisionOwner","nextDecision"];
 const STORE_KEY = "bgr-bauportfolio-frozen-v4";
 const HISTORY_KEY = "bgr-bauportfolio-history-v4";
+const SESSION_KEY = "bgr-mini-klausur-2026-08-14-v1";
 const BASELINE_LABEL = "Excel Stand 13.08.2026";
 const fieldLabels={object:"Objekt",measure:"Massnahme",category:"Projektart",strategy:"Strategie",phase:"Projektphase",horizon:"Planungshorizont",startYear:"Startjahr",endYear:"Fertigstellung",cost:"Gesamtkosten",accuracy:"Kostengenauigkeit",financeStatus:"Finanzierung",currentOwner:"Zuständigkeit im Excel",bgrResponsibility:"Projektverantwortung BGR",projectManagement:"Operative Projektleitung",provider:"Fachleistung und Partner",control:"Unabhängige Kontrolle",deputy:"Stellvertretung",handover:"Nächste Übergabe",decisionOwner:"Entscheidinstanz",decisionDue:"Entscheidtermin",exceptionAction:"Vorgehen bei Lücke",nextDecision:"Nächster Entscheid",note:"Anmerkung",archived:"Archivstatus",cashflow:"Jahresbeträge",resources:"Ressourceneinsätze"};
 let baselineProjects;
@@ -740,8 +741,94 @@ function renderChangeLog() {
   node.innerHTML=`<div class="visual-heading"><div><p class="eyebrow">Differenz zum Excel Ausgangsstand</p><h3>${entries.length} Änderungen im lokalen Arbeitsstand</h3></div></div>${entries.length?`<div class="change-table">${entries.map(item=>`<div><span class="change-type ${item.type}">${esc(item.type)}</span><strong>${esc(item.object)}</strong><small>${esc(item.fields.join(" · "))}</small></div>`).join("")}</div>`:'<div class="empty-state compact"><p>Der lokale Arbeitsstand entspricht dem Excel Ausgangsstand.</p></div>'}`;
 }
 
+const sessionBlocks = [
+  {id:"zielbild",time:"09.00 bis 09.20 Uhr",title:"Gemeinsames Zielbild"},
+  {id:"grundlagen",time:"09.20 bis 09.45 Uhr",title:"Bestehende Entscheidungen und Grundlagen"},
+  {id:"rollen",time:"09.45 bis 10.35 Uhr",title:"BGR intern, BGR nah extern und unabhängig extern"},
+  {id:"planung",time:"10.45 bis 11.20 Uhr",title:"Planungslogik und Projektpass"},
+  {id:"portfolio",time:"11.20 bis 12.00 Uhr",title:"Portfolio, Menschen und Geld"},
+  {id:"faelle",time:"13.00 bis 13.45 Uhr",title:"Drei Realitätstests"},
+  {id:"belastungstest",time:"13.45 bis 14.20 Uhr",title:"Portfolio Belastungstest"},
+  {id:"fazit",time:"14.30 bis 14.50 Uhr",title:"Schlussfolgerungen"},
+  {id:"abschluss",time:"14.50 bis 15.00 Uhr",title:"Verbindlicher Abschluss"}
+];
+function loadSessionState(){
+  try{return JSON.parse(localStorage.getItem(SESSION_KEY)||"{}");}
+  catch{return {};}
+}
+function readSessionState(){
+  return Object.fromEntries(sessionBlocks.map(block=>{
+    const note=document.querySelector(`[data-session-note="${block.id}"]`)?.value||"";
+    const status=document.querySelector(`[data-session-status="${block.id}"]`)?.value||"offen";
+    return [block.id,{note,status}];
+  }));
+}
+function paintSessionStatus(id,status){
+  const block=document.querySelector(`[data-session="${id}"]`);
+  if(!block)return;
+  block.dataset.workStatus=status;
+}
+function hydrateSession(){
+  const state=loadSessionState();
+  sessionBlocks.forEach(block=>{
+    const note=document.querySelector(`[data-session-note="${block.id}"]`);
+    const status=document.querySelector(`[data-session-status="${block.id}"]`);
+    if(note)note.value=state[block.id]?.note||"";
+    if(status)status.value=state[block.id]?.status||"offen";
+    paintSessionStatus(block.id,status?.value||"offen");
+  });
+}
+function saveSessionState(){
+  localStorage.setItem(SESSION_KEY,JSON.stringify({...readSessionState(),updatedAt:new Date().toISOString()}));
+}
+function downloadText(filename,content,type="text/plain;charset=utf-8"){
+  const url=URL.createObjectURL(new Blob([content],{type}));
+  const link=document.createElement("a");link.href=url;link.download=filename;link.click();URL.revokeObjectURL(url);
+}
+document.querySelector("#klausur-panel").addEventListener("input",event=>{
+  if(!event.target.matches("[data-session-note]"))return;
+  saveSessionState();
+});
+document.querySelector("#klausur-panel").addEventListener("change",event=>{
+  if(!event.target.matches("[data-session-status]"))return;
+  saveSessionState();paintSessionStatus(event.target.dataset.sessionStatus,event.target.value);
+});
+document.querySelectorAll("[data-klausur-project]").forEach(button=>button.addEventListener("click",()=>{
+  const project=projects.find(item=>item.id===button.dataset.klausurProject);
+  if(!project)return;
+  fillForm(project);setTab("capture");
+}));
+document.querySelector("[data-open-resources]")?.addEventListener("click",()=>{
+  currentView="resources";renderPortfolio();
+});
+document.querySelector("#export-session-text").addEventListener("click",()=>{
+  const state=readSessionState();
+  const parts=["BGR MINI KLAUSUR BAUKOMMISSION","14. August 2026 · 09.00 bis 15.00 Uhr","Iris Ammann · Alex Tschuppert · Fabrizio Laneve",""];
+  sessionBlocks.forEach((block,index)=>{
+    parts.push(`${index+1}. ${block.title}`,block.time,`Status: ${state[block.id].status}`,state[block.id].note||"Noch kein Ergebnis festgehalten","","");
+  });
+  parts.push("Grundlage: Die definitive zeitliche Priorisierung erfolgt nach der Mini Klausur.");
+  downloadText("BGR_Mini_Klausur_Protokoll_2026-08-14.txt",parts.join("\r\n"));
+  toast("Klausurprotokoll geladen");
+});
+document.querySelector("#export-session-csv").addEventListener("click",()=>{
+  const state=readSessionState();
+  download("BGR_Mini_Klausur_Ergebnisse_2026-08-14.csv",[["Zeit","Arbeitsblock","Status","Ergebnis und nächste Schritte"],...sessionBlocks.map(block=>[block.time,block.title,state[block.id].status,state[block.id].note])]);
+  toast("Klausurergebnisse geladen");
+});
+document.querySelector("#reset-session").addEventListener("click",()=>{
+  if(!window.confirm("Alle lokal gespeicherten Klausurnotizen und Status zurücksetzen? Das Bauportfolio bleibt unverändert."))return;
+  localStorage.removeItem(SESSION_KEY);hydrateSession();toast("Klausurnotizen zurückgesetzt");
+});
+document.querySelector("#download-guide").addEventListener("click",()=>{
+  const guide=document.querySelector("#guide-panel").innerText.replace("Anleitung laden ↓","").trim();
+  downloadText("BGR_Bauportfolio_Anleitung.txt",`BGR BAUPORTFOLIO\r\nANLEITUNG ZUM KLAUSURPROTOTYP\r\n\r\n${guide}`);
+  toast("Anleitung geladen");
+});
+
 setupFilters();
 fillForm(emptyProject);
+hydrateSession();
 renderDataStatus();
 renderUndo();
 renderPortfolio();
