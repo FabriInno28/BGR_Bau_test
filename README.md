@@ -15,7 +15,7 @@ Zusätzlich enthält dieser Stand den vollständigen Ablauf der Mini Klausur vom
 ## Mini Klausur
 
 Der Klausurbereich führt von 09.00 bis 15.00 Uhr durch Zielbild, bestehende
-Grundlagen, die Zuweisung interner und externer Rollen, Projektpass,
+Grundlagen, die Zuweisung von Rollen an BGR Organe, Geschäftsstelle und externe Partner, Projektpass,
 Portfoliosicht, drei Realitätstests und einen gemeinsamen Belastungstest.
 Die Mittagspause dauert von 12.00 bis 13.00 Uhr.
 

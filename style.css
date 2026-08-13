@@ -564,13 +564,15 @@ body { background:#f9faf8; }
 .basis-grid ul,.logic-columns ul,.two-list ul { padding-left:18px; margin-bottom:0; }
 .basis-grid li,.logic-columns li,.two-list li { margin:8px 0; line-height:1.45; color:var(--muted); font-size:12px; }
 .three-worlds { display:grid; grid-template-columns:repeat(3,1fr); gap:14px; }
+.three-worlds.four-worlds { grid-template-columns:repeat(4,1fr); }
 .three-worlds section { min-height:170px; padding:22px; background:var(--mint-light); border-top:5px solid var(--green); }
 .three-worlds section:nth-child(2) { background:var(--cream); border-color:var(--sand); }
 .three-worlds section:nth-child(3) { background:#f3efeb; border-color:var(--terracotta); }
+.three-worlds section:nth-child(4) { background:#eef2f0; border-color:var(--sage); }
 .three-worlds span,.test-flow span,.guide-content>section>span { font-family:Georgia,serif; color:var(--green); }
 .three-worlds p,.test-flow p { color:var(--muted); line-height:1.5; font-size:12px; }
 .role-table-wrap { overflow:auto; margin:26px 0; }
-.role-table { width:100%; border-collapse:collapse; min-width:700px; }
+.role-table { width:100%; border-collapse:collapse; min-width:880px; }
 .role-table th,.role-table td { padding:13px; text-align:left; border-bottom:1px solid var(--line); }
 .role-table thead th { background:var(--ink); color:var(--white); }
 .role-table tbody th { color:var(--green-dark); }
@@ -660,6 +662,7 @@ body { background:#f9faf8; }
   .handover-card { grid-template-columns:1fr 1fr; }
   .basis-grid,.logic-columns,.case-grid { grid-template-columns:1fr; }
   .three-worlds,.principle-grid,.conclusion-grid { grid-template-columns:1fr 1fr; }
+  .three-worlds.four-worlds { grid-template-columns:1fr 1fr; }
   .guide-layout { grid-template-columns:1fr; }
   .guide-nav { position:static; display:grid; grid-template-columns:repeat(4,1fr); }
 }
@@ -700,6 +703,7 @@ body { background:#f9faf8; }
   .target-callout strong { font-size:19px; }
   .session-content blockquote { font-size:20px; }
   .question-grid,.three-worlds,.principle-grid,.conclusion-grid,.horizon-work,.project-pass-questions ol,.assessment-row,.two-list { grid-template-columns:1fr; }
+  .three-worlds.four-worlds { grid-template-columns:1fr; }
   .session-result { grid-template-columns:1fr; padding:20px; }
   .challenge-note,.klausur-principle,.guide-intro { grid-template-columns:1fr; }
   .test-flow { grid-template-columns:1fr; }

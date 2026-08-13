@@ -744,7 +744,7 @@ function renderChangeLog() {
 const sessionBlocks = [
   {id:"zielbild",time:"09.00 bis 09.20 Uhr",title:"Gemeinsames Zielbild"},
   {id:"grundlagen",time:"09.20 bis 09.45 Uhr",title:"Bestehende Entscheidungen und Grundlagen"},
-  {id:"rollen",time:"09.45 bis 10.35 Uhr",title:"BGR intern, BGR nah extern und unabhängig extern"},
+  {id:"rollen",time:"09.45 bis 10.35 Uhr",title:"BGR Organe, Geschäftsstelle, BGR nah extern und unabhängig extern"},
   {id:"planung",time:"10.45 bis 11.20 Uhr",title:"Planungslogik und Projektpass"},
   {id:"portfolio",time:"11.20 bis 12.00 Uhr",title:"Portfolio, Menschen und Geld"},
   {id:"faelle",time:"13.00 bis 13.45 Uhr",title:"Drei Realitätstests"},
