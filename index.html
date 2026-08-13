@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#408381">
+  <title>BGR Bauportfolio</title>
+  <meta name="description" content="Projektpass, Rollen und Ressourcenplanung für die Baugenossenschaft Reussbühl">
+  <link rel="icon" href="bgr-mark.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main>
+    <header class="topbar">
+      <a class="brand" href="#top" aria-label="BGR Bauportfolio Startseite">
+        <img src="bgr-logo.png" alt="BGR, Baugenossenschaft Reussbühl">
+        <span>Bauportfolio</span>
+      </a>
+      <button class="quiet-button" id="new-project">+ Neues Vorhaben</button>
+    </header>
+
+    <section class="hero" id="top">
+      <div class="hero-copy">
+        <p class="eyebrow">BGR · Arbeitsinstrument Baukommission</p>
+        <h1>Planen, zuweisen,<br><em>handlungsfähig bleiben.</em></h1>
+        <p class="lead">Eine einfache Eingabemaske für Projektpass, Rollen und Ressourcen. Die verbindliche Ablage bleibt in Excel.</p>
+      </div>
+      <aside class="hero-note">
+        <span>Arbeitslogik</span>
+        <strong>Funktion vor Person</strong>
+        <p>Zuerst klären wir, welche Leistung ein Vorhaben braucht. Danach, wer sie zuverlässig übernimmt.</p>
+      </aside>
+    </section>
+
+    <nav class="workflow" aria-label="Arbeitsschritte">
+      <button class="active" data-tab="capture"><small>01</small><span>Vorhaben erfassen</span></button>
+      <button data-tab="pass"><small>02</small><span>Projektpass prüfen</span></button>
+      <button data-tab="portfolio"><small>03</small><span>Portfolio ansehen</span></button>
+      <button data-tab="export"><small>04</small><span>Nach Excel</span></button>
+    </nav>
+
+    <section class="workspace tab-panel" id="capture-panel">
+      <div class="section-heading">
+        <div><p class="eyebrow">Schritt 1 · Fragegeführt</p><h2>Was muss für dieses Vorhaben geklärt sein?</h2></div>
+        <div class="completeness"><span id="progress-bar"></span><small id="progress-text">25% Kernfragen geklärt</small></div>
+      </div>
+      <div class="form-layout">
+        <form id="project-form">
+          <input type="hidden" id="project-id" value="draft">
+          <fieldset>
+            <legend><b>1</b><span><strong>Worum geht es?</strong><small>Bestehende Felder aus dem BGR Projektblatt</small></span></legend>
+            <div class="form-grid two">
+              <label class="field"><span>Welches Objekt betrifft es?</span><input id="object" required placeholder="z. B. Obermättlistrasse 5"></label>
+              <label class="field"><span>Welche Projektkategorie passt?</span><select id="category"><option>Umbauprojekt</option><option>Bauprojekt</option><option>Grossprojekt</option></select></label>
+            </div>
+            <label class="field"><span>Welche Massnahme ist vorgesehen?</span><textarea id="measure" required placeholder="Kurz und entscheidungsorientiert beschreiben"></textarea></label>
+            <div class="form-grid three">
+              <label class="field"><span>Grundsatzstrategie</span><select id="strategy"><option>Werterhaltung</option><option>Umfassende Erneuerung</option><option>Ersatzneubau</option><option selected>zu definieren</option></select></label>
+              <label class="field"><span>Aktuelle Projektphase</span><select id="phase"><option>PW - Planerwahl</option><option>21 - Machbarkeitsstudie</option><option>31 - Vorprojekt</option><option>32 - Bauprojekt</option><option>33 - Baubewilligungsphase</option><option>41 - Ausschreibung</option><option>51 - Ausführungsplanung</option><option>52 - Ausführung</option><option>53 - Abschluss</option><option selected>-</option></select></label>
+              <label class="field"><span>Planungshorizont</span><select id="horizon"><option>0–12 Monate</option><option>13–36 Monate</option><option>3–10 Jahre</option><option>&gt; 10 Jahre</option></select><small>Die Genauigkeit nimmt bewusst ab.</small></label>
+            </div>
+          </fieldset>
+
+          <fieldset>
+            <legend><b>2</b><span><strong>Wann und mit welchem Finanzrahmen?</strong><small>Schätzung sichtbar machen, nicht genauer darstellen als bekannt</small></span></legend>
+            <div class="form-grid four">
+              <label class="field"><span>Startjahr</span><input id="startYear" inputmode="numeric" value="2026"></label>
+              <label class="field"><span>Fertigstellung</span><input id="endYear" inputmode="numeric" placeholder="offen"></label>
+              <label class="field"><span>Kosten total CHF</span><input id="cost" inputmode="decimal" placeholder="falls bekannt"></label>
+              <label class="field"><span>Kostengenauigkeit</span><select id="accuracy"><option>(+/- 10%)</option><option>(+/- 25%)</option><option selected>(+/- 50%)</option><option>offen</option></select></label>
+            </div>
+            <div class="form-grid two">
+              <label class="field"><span>Jahreswert für Excel, Jahr</span><input id="annualYear" inputmode="numeric" value="2026"></label>
+              <label class="field"><span>Jahreswert für Excel, CHF</span><input id="annualCost" inputmode="decimal" placeholder="falls bekannt"></label>
+            </div>
+          </fieldset>
+
+          <fieldset>
+            <legend><b>3</b><span><strong>Wer trägt welche Funktion?</strong><small>Vorstand, intern, Firmen von Iris und Alex oder andere Partner sauber trennen</small></span></legend>
+            <div class="form-grid two" id="role-fields"></div>
+            <label class="field"><span>Heutige Zuständigkeit im bestehenden Excel</span><input id="currentOwner" value="noch nicht definiert"></label>
+          </fieldset>
+
+          <fieldset>
+            <legend><b>4</b><span><strong>Ist die Leistung im benötigten Zeitraum möglich?</strong><small>Bandbreite statt Scheingenauigkeit</small></span></legend>
+            <div class="form-grid four">
+              <label class="field"><span>Verfügbarkeit</span><select id="capacity"><option>gesichert</option><option selected>abzuklären</option><option>nicht gesichert</option></select></label>
+              <label class="field"><span>Betroffener Zeitraum</span><select id="capacityPeriod"><option>Q3 / 2026</option><option>Q4 / 2026</option><option>Q1 / 2027</option><option>Q2 / 2027</option><option>Q3 / 2027</option><option>Q4 / 2027</option><option>später / offen</option></select></label>
+              <label class="field"><span>Aufwand min. PT</span><input id="minDays" inputmode="decimal" placeholder="Schätzung"></label>
+              <label class="field"><span>Aufwand max. PT</span><input id="maxDays" inputmode="decimal" placeholder="Schätzung"></label>
+            </div>
+            <label class="field"><span>Welchen nächsten Entscheid können wir mit diesen Angaben besser treffen?</span><textarea id="nextDecision" placeholder="z. B. extern mandatieren, intern absichern, verschieben oder nächste Phase freigeben"></textarea></label>
+            <label class="field"><span>Anmerkung und offene Annahmen</span><textarea id="note" placeholder="Was muss noch bestätigt werden?"></textarea></label>
+          </fieldset>
+
+          <div class="form-actions"><button class="primary-button" type="submit">Projektpass erstellen <span>→</span></button><small>Der Browser hält nur einen lokalen Zwischenstand. Verbindlich wird der Export nach Excel.</small></div>
+        </form>
+        <aside class="side-guide">
+          <p class="eyebrow">Klausur Hilfe</p>
+          <h3>Vier Fragen reichen für den ersten Durchgang.</h3>
+          <ol><li><b>Leistung</b><span>Was braucht das Projekt jetzt?</span></li><li><b>Verantwortung</b><span>Wer hält die BGR Interessen zusammen?</span></li><li><b>Ausführung</b><span>Wer kann die Leistung erbringen?</span></li><li><b>Machbarkeit</b><span>Ist sie im Zeitraum gesichert?</span></li></ol>
+          <div class="rule-card"><span>Wichtig</span><p>«Nicht gesichert» stoppt nicht automatisch. Es macht den nötigen Risiko und Ressourcenentscheid sichtbar.</p></div>
+        </aside>
+      </div>
+    </section>
+
+    <section class="workspace tab-panel hidden" id="pass-panel"><div class="section-heading"><div><p class="eyebrow">Schritt 2 · Verdichtete Sicht</p><h2>Projektpass</h2></div><button class="quiet-button" data-tab="capture">Bearbeiten</button></div><div id="project-pass"></div></section>
+    <section class="workspace tab-panel hidden" id="portfolio-panel"><div class="section-heading"><div><p class="eyebrow">Schritt 3 · Rollende Gesamtsicht</p><h2>Portfolio nach Planungshorizont</h2></div><button class="primary-button" id="portfolio-new">+ Vorhaben erfassen</button></div><div class="horizon-grid" id="horizon-grid"></div><div class="portfolio-toolbar"><p id="portfolio-count"></p><button id="clear-filter" class="hidden">Filter löschen ×</button></div><div class="project-list" id="project-list"></div><p class="source-note">Basis: BGR Strategieplanung 2026 und BGR Projektblatt. Fehlende Rollen und Ressourcendaten sind bewusst als offen oder abzuklären gekennzeichnet.</p></section>
+    <section class="workspace tab-panel hidden" id="export-panel"><div class="section-heading"><div><p class="eyebrow">Schritt 4 · Verbindliche Ablage</p><h2>Nach Excel übergeben</h2></div></div><div class="export-grid"><article><span class="export-icon">XL</span><div><small>Bestehende Struktur</small><h3>Projektübersicht</h3><p>Exportiert die heutigen Datenbankspalten aus dem Projektblatt.</p></div><button class="primary-button" id="export-core">CSV für Excel laden ↓</button></article><article><span class="export-icon warm">R</span><div><small>Neue Ergänzung</small><h3>Rollen und Ressourcen</h3><p>Exportiert Verantwortung, Leitung, Partner, Kontrolle, Verfügbarkeit und Personentage.</p></div><button class="primary-button" id="export-roles">CSV für Excel laden ↓</button></article></div><div class="excel-guide"><div><p class="eyebrow">So bleibt die Logik einfach</p><h3>Website zum Fragen. Excel zum Speichern.</h3></div><ol><li><b>1</b><span>Vorhaben gemeinsam ausfüllen</span></li><li><b>2</b><span>Projektpass und offene Punkte prüfen</span></li><li><b>3</b><span>CSV herunterladen</span></li><li><b>4</b><span>In die bestehende Excel Gesamtsicht übernehmen</span></li></ol></div><div class="privacy-note"><strong>Keine zentrale Datenbank</strong><p>Der Browser speichert nur einen lokalen Zwischenstand auf diesem Gerät. Die verbindliche Speicherung erfolgt weiterhin in Excel.</p></div></section>
+
+    <footer><div><img src="bgr-mark.png" alt=""><span>Baugenossenschaft Reussbühl</span></div><p>Prototyp · Arbeitsstand August 2026</p></footer>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>
