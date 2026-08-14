@@ -1,55 +1,86 @@
-# BGR Bauportfolio
+# BGR Portfolio Cockpit · Prototyp V2
 
-Finaler Klausurprototyp vom 14. August 2026.
+Ein lokales, fragegeführtes Planungswerkzeug für das Bauportfolio der Baugenossenschaft Reussbühl.
 
-Das Tool verbindet vier Perspektiven:
+## Zweck
 
-1. Vorhaben und Planungshorizonte
-2. Rollen und Schnittstellen
-3. Menschen und verfügbare Kapazität
-4. Investitionen und Finanzrahmen
+Das Cockpit macht gleichzeitig sichtbar:
 
-Zusätzlich enthält dieser Stand den vollständigen Ablauf der Mini Klausur vom
-14. August 2026 sowie eine integrierte Anleitung.
+- welches einzelne Projekt in welcher Projektphase steht,
+- welche Meilensteine und Entscheide als Nächstes anstehen,
+- welche Menschen, Firmen und Funktionen pro Quartal benötigt werden,
+- welche Personentage pro Quartal verfügbar sind,
+- wo Bedarf und Verfügbarkeit nicht zusammenpassen,
+- welche finanziellen Belastungen bereits bekannt sind,
+- welche lokalen Änderungen später kontrolliert nach Excel übernommen werden können.
 
-## Mini Klausur
+Die bestehende Excel-Datei ist die unveränderte Mutter. Die Website schreibt nie in diese Datei. Der Arbeitsstand wird ausschliesslich im Browser des verwendeten Geräts gespeichert.
 
-Der Klausurbereich führt von 09.00 bis 15.00 Uhr durch Zielbild, bestehende
-Grundlagen, die Zuweisung von Rollen an BGR Organe, Geschäftsstelle und externe Partner, Projektpass,
-Portfoliosicht, drei Realitätstests und einen gemeinsamen Belastungstest.
-Die Mittagspause dauert von 12.00 bis 13.00 Uhr.
+## Projektarten
 
-Ergebnisse und Arbeitsstatus können direkt pro Block erfasst werden. Sie werden
-lokal im Browser gespeichert und lassen sich als Textprotokoll oder CSV Datei
-exportieren. Die Seite gibt die Struktur. Diskussion, Post its und Arbeit an der
-Wand bleiben der eigentliche Inhalt der Klausur.
+- **Kleinprojekt:** ohne externen Planer, Architekten oder eine vergleichbare Fachplanung und innerhalb des bewilligten Projektrahmens. Die genaue Abgrenzung wird später im BGR Handbuch festgelegt.
+- **Bauprojekt:** alle übrigen relevanten Bauvorhaben.
 
-## Integrierte Anleitung
+## Projektphasen
 
-Der Bereich `Anleitung` erklärt Cockpit, Projektbearbeitung, Ressourcenlogik,
-Ausfallsimulation, Exporte und Rücksetzfunktionen. Die Anleitung kann zusätzlich
-als Textdatei geladen werden.
+1. Anlass / Prüfauftrag
+2. Machbarkeitsstudie
+3. Planerauswahl
+4. Planung / Projektierung
+5. Ausschreibung / Vergabe
+6. Realisierung
+7. Abschluss / Übergabe
 
-## Excel bleibt die Mutter
+Die Farben der sieben Phasen sind im gesamten Cockpit identisch. Die beiden grossen Entscheide sind nach der Machbarkeitsstudie und nach der Planung markiert. Sie beziehen den Gesamtvorstand ein. Die Kostengenauigkeit beträgt dort grundsätzlich ±25 Prozent beziehungsweise ±10 Prozent.
 
-Der importierte Excel Ausgangsstand bleibt unverändert im Prototyp hinterlegt. Alle Anpassungen werden nur als lokaler Arbeitsstand im Browser gespeichert.
+## Ressourcenlogik
 
-Für jedes bestehende Vorhaben sind möglich:
+Für Projektbedarf und Verfügbarkeit wird dieselbe einfache Zeile verwendet:
 
-* Änderungen verwerfen
-* Excel Stand wiederherstellen
-* Archivieren und wieder aktivieren
-* Lokal löschen
-* Letzte Änderung rückgängig machen
+`Name | Funktion | Quartal | PT minimum | PT maximum`
 
-Die drei CSV Exporte dienen der kontrollierten Übergabe zurück nach Excel. Es gibt keine automatische Synchronisation.
+Beispiel: `Iris | BK | Q1 2027 | 4 | 6`
+
+Die Gesamtsicht summiert die Projektbedarfe je Name und Quartal und vergleicht sie mit der erfassten Verfügbarkeit. So werden Lücken, Überschneidungen und noch offene Angaben sichtbar.
+
+## Bedienung
+
+1. Ein Projekt in der Zeitachse auswählen.
+2. Rechts die Projektsicht prüfen.
+3. Mit **Projekt öffnen** Grunddaten, Rollen, Ressourcen und Meilensteine bearbeiten.
+4. Unter **Verfügbarkeit** die Quartalswerte von Personen und Firmen erfassen.
+5. Die Ressourcenmatrix und die Finanzsicht prüfen.
+6. Geprüfte Daten über die CSV-Schaltflächen exportieren und bewusst in Excel übernehmen.
+
+Ein Projekt kann im lokalen Arbeitsstand gelöscht werden. Mit **Rückgängig**, dem projektspezifischen Wiederherstellen oder **Arbeitsstand zurücksetzen** kann jederzeit auf den Excel Ausgangsstand zurückgekehrt werden.
+
+## Lokal starten
+
+```bash
+npm install
+npm run dev
+```
+
+Danach die angezeigte lokale Adresse im Browser öffnen.
 
 ## GitHub Pages
 
-Alle Dateien aus diesem Ordner in das Hauptverzeichnis eines GitHub Repository hochladen. In GitHub unter `Settings > Pages` die Veröffentlichung aus `main` und `/root` aktivieren.
+Die statischen Dateien können direkt aus dem Projektroot veröffentlicht werden. Für einen Build:
 
-Es braucht keine Installation, keinen Server, kein Login und keine Datenbank.
+```bash
+npm install
+npm run build
+```
 
-## Wichtiger Betriebshinweis
+Das Ergebnis liegt in `dist/`.
 
-Der Arbeitsstand wird nur im Browser des verwendeten Geräts gespeichert. Andere Geräte sehen diese Änderungen nicht automatisch. Vor einem Gerätewechsel deshalb die CSV Dateien exportieren.
+## Datensicherheit des Prototyps
+
+- keine Anmeldung
+- kein Server und keine Datenbank
+- keine automatische Synchronisation
+- lokale Speicherung im Browser
+- Excel bleibt unverändert
+- CSV Export zur kontrollierten Übernahme
+
+Für einen späteren Mehrbenutzerbetrieb braucht es ein bewusstes Betriebs-, Berechtigungs- und Sicherungskonzept.

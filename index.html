@@ -3,413 +3,86 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="theme-color" content="#285f5c">
-  <title>BGR Bauportfolio</title>
-  <meta name="description" content="Projektpass, Portfolio, Rollen, Ressourcen und Finanzplanung der Baugenossenschaft Reussbühl">
+  <meta name="theme-color" content="#184f4a">
+  <title>BGR Portfolio Cockpit</title>
+  <meta name="description" content="Rollende Projekt-, Ressourcen- und Finanzplanung der Baugenossenschaft Reussbühl">
   <link rel="icon" href="bgr-mark.png">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <main>
-    <header class="topbar">
-      <a class="brand" href="#top" aria-label="BGR Bauportfolio Startseite"><img src="bgr-logo.png" alt="BGR, Baugenossenschaft Reussbühl"><span>Bauportfolio</span></a>
-      <div class="top-actions">
-        <span class="master-pill"><i></i>Excel Mutter unverändert</span>
-        <button class="icon-button" id="undo-action" disabled title="Letzte Änderung rückgängig">↶ <span>Rückgängig</span></button>
-        <button class="quiet-button" id="new-project">+ Neues Vorhaben</button>
-      </div>
-    </header>
+  <header class="topbar">
+    <a class="brand" href="#top" aria-label="BGR Portfolio Cockpit"><img src="bgr-logo.png" alt="BGR"><span>Portfolio Cockpit</span></a>
+    <nav aria-label="Schnellnavigation"><a href="#portfolio">Portfolio</a><a href="#ressourcen">Ressourcen</a><a href="#export">Übergabe</a></nav>
+    <div class="top-actions"><span class="master-pill"><i></i>Excel Mutter unverändert</span><button class="button ghost" id="undo" disabled>↶ Rückgängig</button><button class="button primary" id="new-project">+ Projekt</button></div>
+  </header>
 
-    <section class="hero" id="top">
-      <div class="hero-copy">
-        <p class="eyebrow">BGR · Klausurcockpit Bauportfolio</p>
-        <h1>Sehen, was möglich ist.<br><em>Entscheiden, was nötig ist.</em></h1>
-        <p class="lead">Alle Vorhaben, Rollen, Menschen und finanziellen Belastungen in einer gemeinsamen Sicht. Excel bleibt die verbindliche Mutter.</p>
-        <div class="hero-actions"><button class="primary-button" data-tab="klausur">Klausur öffnen <span>→</span></button><button class="secondary-button" data-tab="portfolio">Cockpit öffnen</button></div>
-      </div>
-      <aside class="hero-dashboard" id="hero-dashboard" aria-label="Aktuelle Portfoliosicht"></aside>
+  <main id="top">
+    <section class="hero shell">
+      <div class="hero-copy"><p class="eyebrow">BGR · rollende Bauplanung</p><h1>Einzelnes Projekt verstehen.<br><em>Das Ganze im Griff behalten.</em></h1><p>Eine gemeinsame Sicht auf Projekte, Phasen, Meilensteine, Menschen und Geld. Der Prototyp verändert die bestehende Excel-Datei nie. Er führt einen lokalen Arbeitsstand, der geprüft exportiert werden kann.</p></div>
+      <div class="hero-rule"><span>Planungsgrundsatz</span><strong>Menschen, Geld und Zeit werden vor dem nächsten Phasenentscheid gemeinsam geprüft.</strong><small>Projektphasen sind keine Planungshorizonte. In den nächsten 36 Monaten planen wir quartalsweise, danach jährlich.</small></div>
     </section>
 
-    <nav class="workflow" aria-label="Arbeitsbereiche">
-      <button class="active" data-tab="portfolio"><small>01</small><span>Cockpit</span></button>
-      <button data-tab="capture"><small>02</small><span>Vorhaben bearbeiten</span></button>
-      <button data-tab="pass"><small>03</small><span>Projektpass</span></button>
-      <button data-tab="export"><small>04</small><span>Excel Übergabe</span></button>
-      <button data-tab="klausur"><small>05</small><span>Klausur</span></button>
-      <button data-tab="guide"><small>06</small><span>Anleitung</span></button>
-    </nav>
+    <section class="shell pulse" aria-label="Portfolio Kennzahlen"><div class="pulse-title"><span>Portfolio heute</span><small id="data-state">Excel Ausgangsstand</small></div><div class="kpis" id="kpis"></div></section>
 
-    <section class="workspace tab-panel" id="portfolio-panel">
-      <div class="section-heading cockpit-heading">
-        <div><p class="eyebrow">Schritt 1 · Rollende Gesamtsicht</p><h2>Wo müssen wir handeln?</h2></div>
-        <button class="primary-button" id="portfolio-new">+ Vorhaben erfassen</button>
+    <section class="shell section" id="portfolio">
+      <div class="section-head"><div><p class="eyebrow">Gesamtsicht und Projektsicht</p><h2>Alle Projekte. Eine Zeitachse.</h2><p>Ein Projekt auswählen, ohne das Portfolio aus den Augen zu verlieren.</p></div><div class="head-actions"><button class="button ghost" id="expand-long">Jahre 4–10 einblenden</button><button class="button primary" id="edit-selected">Ausgewähltes Projekt bearbeiten</button></div></div>
+      <div class="toolbar">
+        <label class="search"><span>⌕</span><input id="search" type="search" placeholder="Objekt oder Massnahme suchen"></label>
+        <label><span>Projektart</span><select id="kind-filter"><option value="all">Alle</option><option>Kleinprojekt</option><option>Bauprojekt</option></select></label>
+        <label><span>Projektphase</span><select id="phase-filter"><option value="all">Alle Phasen</option></select></label>
+        <label class="toggle"><input id="only-pressure" type="checkbox"><span>Nur mit Klärungsbedarf</span></label>
       </div>
-
-      <div class="data-line">
-        <div><span class="data-label">Excel Ausgangsstand</span><strong>Strategieplanung und Projektblatt · 13.08.2026</strong></div>
-        <i>→</i>
-        <div><span class="data-label">Lokaler Arbeitsstand</span><strong id="working-status">unverändert</strong></div>
-        <button class="text-button" id="show-changes">Änderungen anzeigen</button>
-      </div>
-
-      <div class="cockpit-kpis" id="cockpit-kpis"></div>
-      <div class="view-switch" role="tablist" aria-label="Portfolio Darstellung">
-        <button class="active" data-view="overview">Entscheidungssicht</button>
-        <button data-view="timeline">Zeit und Geld</button>
-        <button data-view="resources">Menschen und Partner</button>
-        <button data-view="list">Alle Vorhaben</button>
-      </div>
-
-      <div class="filter-panel">
-        <label><span>Objekt oder Massnahme</span><input id="filter-search" type="search" placeholder="Suchen"></label>
-        <label><span>Projektart</span><select id="filter-category"><option value="Alle">Alle</option><option>Umbauprojekt</option><option>Bauprojekt</option><option>Grossprojekt</option><option>offen</option></select></label>
-        <label><span>Von</span><select id="filter-from"></select></label>
-        <label><span>Bis</span><select id="filter-to"></select></label>
-        <label><span>Ressource</span><select id="filter-resource"></select></label>
-        <label class="check-field"><input id="show-archived" type="checkbox"><span>Nur Archiv</span></label>
-        <button id="reset-filters" class="text-button">Filter zurücksetzen</button>
-      </div>
-
-      <div id="overview-view" class="portfolio-view">
-        <div class="overview-grid">
-          <section class="decision-board">
-            <div class="visual-heading"><div><p class="eyebrow">Fokus</p><h3>Entscheidungsbedarf</h3><p>Die wichtigsten offenen Punkte im gewählten Zeitraum.</p></div></div>
-            <div id="decision-summary" class="decision-summary"></div>
-          </section>
-          <section class="portfolio-pulse">
-            <div class="visual-heading"><div><p class="eyebrow">Portfolio Puls</p><h3>Was trägt. Was kippen kann.</h3></div></div>
-            <div id="portfolio-pulse"></div>
-          </section>
+      <div class="portfolio-layout">
+        <div class="timeline-card">
+          <div class="timeline-meta"><div><strong>Nächste 36 Monate</strong><span>12 Quartale · Erstvorschlag aus den vorhandenen Jahresdaten</span></div><div class="phase-legend" id="phase-legend"></div></div>
+          <div class="timeline-scroll"><div class="timeline" id="timeline"></div></div>
+          <div class="long-horizon hidden" id="long-horizon"></div>
         </div>
-        <section class="focus-section">
-          <div class="visual-heading"><div><h3>Vorhaben mit Klärungsbedarf</h3><p>Nicht als automatische Priorisierung. Als Einladung zum richtigen Entscheid.</p></div><button class="small-button" data-view="list">Gesamte Liste öffnen</button></div>
-          <div id="focus-list" class="focus-list"></div>
-        </section>
-      </div>
-
-      <div id="timeline-view" class="portfolio-view hidden">
-        <div class="visual-heading"><div><p class="eyebrow">Zeit</p><h3>Projektzeitachse</h3><p>Start und Ende gemäss bestehender Planung. Unbestätigte Vorhaben bleiben sichtbar.</p></div><div class="legend"><span><i class="legend-dot project"></i>Vorhaben</span><span><i class="legend-dot uncertain"></i>unbestätigt</span></div></div>
-        <div id="timeline-chart" class="timeline-chart"></div>
-        <div class="money-panel">
-          <div class="visual-heading"><div><p class="eyebrow">Geld</p><h3>Investitionsbelastung pro Jahr</h3><p>Bekannte Jahresbeträge gegen den verfügbaren Finanzrahmen.</p></div></div>
-          <div id="money-chart" class="money-chart"></div>
-          <details class="planning-panel">
-            <summary><div><strong>Finanzrahmen erfassen</strong><small>Pro Jahr als Bandbreite. Bestätigte und provisorische Werte bleiben unterscheidbar.</small></div><span>öffnen</span></summary>
-            <div class="planner-form finance-planner">
-              <label><span>Jahr</span><select id="finance-year"></select></label>
-              <label><span>Verfügbar min. CHF</span><input id="finance-min" inputmode="decimal" placeholder="offen"></label>
-              <label><span>Verfügbar max. CHF</span><input id="finance-max" inputmode="decimal" placeholder="offen"></label>
-              <label><span>Qualität</span><select id="finance-quality"><option>provisorisch</option><option>bestätigt</option></select></label>
-              <button class="primary-button" id="add-finance-plan" type="button">Übernehmen</button>
-            </div>
-            <div id="finance-plan-list" class="plan-list"></div>
-          </details>
-        </div>
-      </div>
-
-      <div id="resources-view" class="portfolio-view hidden">
-        <div class="visual-heading"><div><p class="eyebrow">Menschen und Partner</p><h3>Bedarf gegen Verfügbarkeit</h3><p>Personentage pro Quartal. Keine künstliche Prozentgrenze, sondern nachvollziehbare Bandbreiten.</p></div><div class="legend"><span><i class="legend-dot secured"></i>tragbar</span><span><i class="legend-dot clarify"></i>unsicher</span><span><i class="legend-dot unsecured"></i>Lücke</span><span><i class="legend-dot open"></i>offen</span></div></div>
-        <div id="resource-summary" class="resource-summary"></div>
-        <div class="scenario-panel">
-          <div><span class="eyebrow">Belastungstest</span><strong>Was passiert, wenn eine Schlüsselressource ausfällt?</strong></div>
-          <label><span>Ressource</span><select id="scenario-resource"></select></label>
-          <label><span>Von</span><select id="scenario-from"></select></label>
-          <label><span>Bis</span><select id="scenario-to"></select></label>
-          <button class="secondary-button" id="toggle-scenario" type="button">Ausfall simulieren</button>
-        </div>
-        <div id="scenario-active" class="scenario-active hidden"></div>
-        <div id="resource-matrix" class="matrix-wrap"></div>
-        <p class="source-note">Leere oder offene Felder bedeuten: Noch keine belastbare Angabe. Sie bedeuten nicht, dass keine Arbeit anfällt.</p>
-        <details class="planning-panel">
-          <summary><div><strong>Verfügbare Kapazität erfassen</strong><small>Je Ressource und Zeitraum. Angaben können provisorisch oder bestätigt sein.</small></div><span>öffnen</span></summary>
-          <div class="planner-form capacity-planner">
-            <label><span>Ressource</span><select id="capacity-resource"></select></label>
-            <label><span>Von</span><select id="capacity-from"></select></label>
-            <label><span>Bis</span><select id="capacity-to"></select></label>
-            <label><span>Verfügbar min. PT pro Quartal</span><input id="capacity-min" inputmode="decimal" placeholder="offen"></label>
-            <label><span>Verfügbar max. PT pro Quartal</span><input id="capacity-max" inputmode="decimal" placeholder="offen"></label>
-            <label><span>Qualität</span><select id="capacity-quality"><option>provisorisch</option><option>bestätigt</option></select></label>
-            <button class="primary-button" id="add-capacity-plan" type="button">Übernehmen</button>
-          </div>
-          <div id="capacity-plan-list" class="plan-list"></div>
-        </details>
-      </div>
-
-      <div id="list-view" class="portfolio-view hidden">
-        <div class="horizon-grid" id="horizon-grid"></div>
-        <div class="portfolio-toolbar"><p id="portfolio-count"></p><button id="clear-filter" class="hidden">Horizontfilter löschen ×</button></div>
-        <div class="project-list" id="project-list"></div>
-      </div>
-      <p class="source-note">Basis: BGR Strategieplanung 2026 und BGR Projektblatt. Die Sicht priorisiert nicht automatisch. Sie macht Entscheidungsbedarf sichtbar.</p>
-    </section>
-
-    <section class="workspace tab-panel hidden" id="capture-panel">
-      <div class="section-heading">
-        <div><p class="eyebrow">Schritt 2 · Fragegeführt</p><h2>Was muss für dieses Vorhaben geklärt sein?</h2></div>
-        <div class="completeness"><span id="progress-bar"></span><small id="progress-text">0% Kernfragen geklärt</small></div>
-      </div>
-      <div class="form-layout">
-        <form id="project-form">
-          <input type="hidden" id="project-id" value="draft">
-          <div id="baseline-banner" class="baseline-banner"></div>
-          <fieldset>
-            <legend><b>1</b><span><strong>Worum geht es?</strong><small>Bestehende Felder aus dem BGR Projektblatt</small></span></legend>
-            <div class="form-grid two">
-              <label class="field"><span>Welches Objekt betrifft es?</span><input id="object" required placeholder="z. B. Obermättlistrasse 5"></label>
-              <label class="field"><span>Welche Projektkategorie passt?</span><select id="category"><option>Umbauprojekt</option><option>Bauprojekt</option><option>Grossprojekt</option><option>offen</option></select></label>
-            </div>
-            <label class="field"><span>Welche Massnahme ist vorgesehen?</span><textarea id="measure" required placeholder="Kurz und entscheidungsorientiert beschreiben"></textarea></label>
-            <div class="form-grid three">
-              <label class="field"><span>Grundsatzstrategie</span><select id="strategy"><option>Werterhaltung</option><option>Umfassende Erneuerung</option><option>Ersatzneubau</option><option selected>zu definieren</option></select></label>
-              <label class="field"><span>Aktuelle Projektphase</span><select id="phase"><option>U - Unterhalt</option><option>PW - Planerwahl</option><option>21 - Machbarkeitsstudie</option><option>31 - Vorprojekt</option><option>32 - Bauprojekt</option><option>33 - Baubewilligungsphase</option><option>41 - Ausschreibung</option><option>51 - Ausführungsplanung</option><option>52 - Ausführung</option><option>53 - Abschluss</option><option selected>-</option></select></label>
-              <label class="field"><span>Planungshorizont</span><select id="horizon"><option>0–12 Monate</option><option>13–36 Monate</option><option>3–10 Jahre</option><option>&gt; 10 Jahre</option></select><small>Die Genauigkeit nimmt bewusst ab.</small></label>
-            </div>
-          </fieldset>
-
-          <fieldset>
-            <legend><b>2</b><span><strong>Wann und mit welchem Finanzrahmen?</strong><small>Bekannte Beträge und offene Jahre getrennt darstellen</small></span></legend>
-            <div class="form-grid five">
-              <label class="field"><span>Startjahr</span><input id="startYear" inputmode="numeric" value="2026"></label>
-              <label class="field"><span>Fertigstellung</span><input id="endYear" inputmode="numeric" placeholder="offen"></label>
-              <label class="field"><span>Kosten total CHF</span><input id="cost" inputmode="decimal" placeholder="falls bekannt"></label>
-              <label class="field"><span>Kostengenauigkeit</span><select id="accuracy"><option>(+/- 10%)</option><option>(+/- 25%)</option><option selected>(+/- 50%)</option><option>Erste Schätzung</option><option>offen</option></select></label>
-              <label class="field"><span>Finanzierung</span><select id="financeStatus"><option>gesichert</option><option selected>in Klärung</option><option>nicht gesichert</option><option>nicht relevant</option></select></label>
-            </div>
-            <div class="repeat-card"><div class="repeat-heading"><div><strong>Jahresbeträge</strong><small>Mehrere Jahre einzeln erfassen. «Offen» wird nicht als CHF 1 gerechnet.</small></div><button type="button" class="small-button" id="add-cashflow">+ Jahresbetrag</button></div><div id="cashflow-list" class="repeat-list"></div></div>
-          </fieldset>
-
-          <fieldset>
-            <legend><b>3</b><span><strong>Wer trägt welche Funktion?</strong><small>Interne Verantwortung und externe Leistung sauber trennen</small></span></legend>
-            <div class="form-grid two" id="role-fields"></div>
-            <div class="form-grid two">
-              <label class="field"><span>Stellvertretung bei Ausfall</span><select id="deputy"></select><small>Für anspruchsvolle Vorhaben zwingend bewusst klären.</small></label>
-              <label class="field"><span>Heutige Zuständigkeit im bestehenden Excel</span><input id="currentOwner" value="noch nicht definiert"></label>
-            </div>
-          </fieldset>
-
-          <fieldset>
-            <legend><b>4</b><span><strong>Was ist die nächste Schnittstelle?</strong><small>Übergabe, Abnahme und Entscheid sichtbar machen</small></span></legend>
-            <label class="field"><span>Welches Ergebnis wird als Nächstes übergeben?</span><textarea id="handover" placeholder="z. B. Machbarkeitsstudie mit Varianten, Kostenband und Empfehlung"></textarea></label>
-            <div class="form-grid three">
-              <label class="field"><span>Wer entscheidet danach?</span><select id="decisionOwner"></select></label>
-              <label class="field"><span>Bis wann?</span><input id="decisionDue" placeholder="Datum oder Quartal"></label>
-              <label class="field"><span>Falls nicht abgesichert</span><select id="exceptionAction"><option>offen</option><option>Projekt verschieben</option><option>Projekt verlangsamen</option><option>Extern verstärken</option><option>Anderes Vorhaben anpassen</option><option>Bewusster Risikoentscheid</option><option>nicht nötig</option></select></label>
-            </div>
-            <label class="field"><span>Welchen nächsten Entscheid können wir mit diesen Angaben besser treffen?</span><textarea id="nextDecision" placeholder="Konkret formulieren"></textarea></label>
-          </fieldset>
-
-          <fieldset>
-            <legend><b>5</b><span><strong>Welche Ressourcen braucht das Vorhaben?</strong><small>Menschen und Partner individuell je Zeitraum erfassen</small></span></legend>
-            <div class="repeat-card"><div class="repeat-heading"><div><strong>Ressourceneinsätze</strong><small>Personentage als Bandbreite. Zuweisung und Gesamtkapazität werden getrennt beurteilt.</small></div><button type="button" class="small-button" id="add-resource">+ Ressource</button></div><div id="resource-list" class="repeat-list"></div></div>
-            <label class="field"><span>Anmerkung und offene Annahmen</span><textarea id="note" placeholder="Was muss noch bestätigt werden?"></textarea></label>
-          </fieldset>
-
-          <div class="form-actions">
-            <button class="primary-button" type="submit">Arbeitsstand speichern <span>→</span></button>
-            <div id="record-actions" class="record-actions hidden">
-              <button type="button" id="discard-project" class="secondary-button">Änderungen verwerfen</button>
-              <button type="button" id="restore-project" class="secondary-button">Excel Stand wiederherstellen</button>
-              <button type="button" id="archive-project" class="secondary-button">Archivieren</button>
-              <button type="button" id="delete-project" class="danger-link">Endgültig löschen</button>
-            </div>
-            <small>Die Excel Mutter bleibt unverändert. Gespeichert wird nur der lokale Arbeitsstand.</small>
-          </div>
-        </form>
-        <aside class="side-guide">
-          <p class="eyebrow">Entscheidungslogik</p><h3>Fünf Fragen. Ein belastbarer Projektpass.</h3>
-          <ol><li><b>Vorhaben</b><span>Was ist wirklich geplant?</span></li><li><b>Geld</b><span>Was kostet es und ist es finanzierbar?</span></li><li><b>Rollen</b><span>Wer trägt welche Funktion?</span></li><li><b>Übergabe</b><span>Wer liefert was an wen?</span></li><li><b>Kapazität</b><span>Ist die Leistung im Zeitraum möglich?</span></li></ol>
-          <div class="rule-card"><span>Grundsatz</span><p>«Nicht abgesichert» stoppt nicht automatisch. Es verlangt einen benannten Risiko und Ressourcenentscheid.</p></div>
-        </aside>
+        <aside class="project-card" id="project-detail" aria-live="polite"></aside>
       </div>
     </section>
 
-    <section class="workspace tab-panel hidden" id="pass-panel"><div class="section-heading"><div><p class="eyebrow">Schritt 3 · Verdichtete Sicht</p><h2>Projektpass</h2></div><button class="quiet-button" data-tab="capture">Bearbeiten</button></div><div id="project-pass"></div></section>
+    <section class="band" id="ressourcen"><div class="shell section">
+      <div class="section-head compact"><div><p class="eyebrow">Menschen und Partner</p><h2>Bedarf trifft Verfügbarkeit.</h2><p>Dieselbe einfache Logik im Projekt und im Gesamtportfolio: Name, Funktion, Quartal, PT min. und PT max.</p></div><button class="button primary" id="new-capacity">+ Verfügbarkeit</button></div>
+      <div class="resource-layout">
+        <article class="resource-chart-card"><div class="card-head"><div><strong>Ressourcenlage nach Quartal</strong><span>Portfolio Bedarf gegen erfasste Verfügbarkeit</span></div><select id="resource-focus" aria-label="Ressource auswählen"></select></div><div class="resource-chart" id="resource-chart"></div></article>
+        <article class="capacity-card"><div class="card-head"><div><strong>Verfügbarkeit</strong><span id="capacity-count">0 Einträge</span></div><button class="text-button" id="export-capacity">CSV ↓</button></div><p class="capacity-hint">Iris und TRESTO sind mit den besprochenen Beispielwerten vorausgefüllt. Vor einer Bewertung bitte prüfen oder ersetzen.</p><div class="simple-table" id="capacity-list"></div></article>
+      </div>
+      <article class="matrix-card"><div class="card-head"><div><strong>Wer wird wann knapp?</strong><span>Nur Quartale mit Bedarf oder eingetragener Verfügbarkeit</span></div><div class="state-legend"><span><i class="ok"></i>tragbar</span><span><i class="watch"></i>prüfen</span><span><i class="gap"></i>Lücke</span><span><i class="open"></i>offen</span></div></div><div class="matrix-wrap" id="resource-matrix"></div></article>
+    </div></section>
 
-    <section class="workspace tab-panel hidden" id="export-panel">
-      <div class="section-heading"><div><p class="eyebrow">Schritt 4 · Kontrollierte Übergabe</p><h2>Excel bleibt die Mutter.</h2></div></div>
-      <div class="master-explain">
-        <div><span>01</span><strong>Excel Ausgangsstand</strong><p>Unverändert im Prototyp hinterlegt.</p></div><i>→</i>
-        <div><span>02</span><strong>Lokaler Arbeitsstand</strong><p>Annahmen, Zuweisungen und Klausurentscheide.</p></div><i>→</i>
-        <div><span>03</span><strong>Geprüfte Übergabe</strong><p>CSV Export zur bewussten Übernahme in Excel.</p></div>
-      </div>
-      <div class="export-grid">
-        <article><span class="export-icon">XL</span><div><small>Projekt und Geld</small><h3>Projektübersicht</h3><p>Mit stabiler Projekt ID, Jahresbeträgen und Finanzierungsstatus.</p></div><button class="primary-button" id="export-core">CSV laden ↓</button></article>
-        <article><span class="export-icon warm">R</span><div><small>Rollen und Menschen</small><h3>Ressourcenübersicht</h3><p>Eine Zeile pro Ressource und Zeitraum inklusive Schnittstelle.</p></div><button class="primary-button" id="export-roles">CSV laden ↓</button></article>
-        <article><span class="export-icon sand">Δ</span><div><small>Nur Differenzen</small><h3>Änderungsprotokoll</h3><p>Zeigt, was gegenüber dem Excel Ausgangsstand verändert wurde.</p></div><button class="primary-button" id="export-changes">Änderungen laden ↓</button></article>
-      </div>
-      <div id="change-log" class="change-log"></div>
-      <div class="freeze-panel"><div><p class="eyebrow">Eingefrorener Prototyp</p><h3>BGR Bauportfolio · Klausurstand 14.08.2026</h3><p>Dieser Stand ist für die Klausur bewusst abgeschlossen. Ein späterer Ausbau wird separat entschieden.</p></div><button class="danger-outline" id="restore-all">Gesamten Arbeitsstand auf Excel zurücksetzen</button></div>
-      <div class="privacy-note"><strong>Keine zentrale Datenbank</strong><p>Der Arbeitsstand liegt nur in diesem Browser. Andere Geräte sehen ihn nicht automatisch. Die Excel Dateien werden weder geöffnet noch verändert.</p></div>
+    <section class="shell section finance-section">
+      <div class="section-head compact"><div><p class="eyebrow">Finanzielle Gesamtsicht</p><h2>Geld im selben Takt planen.</h2><p>Bekannte Jahreswerte aus Excel bleiben sichtbar. Quartalswerte können im Projekt präzisiert werden.</p></div></div>
+      <div class="finance-grid"><article class="finance-chart-card"><div class="card-head"><div><strong>Bekannte Projektkosten</strong><span>Jahreswerte aus Excel und lokaler Arbeitsstand</span></div></div><div id="finance-chart" class="finance-chart"></div></article><article class="gate-card"><span class="gate-number">2</span><div><strong>Grosse Entscheide</strong><p>Nach der Machbarkeitsstudie und nach der Planung. Dort wird der Gesamtvorstand einbezogen.</p><small>Machbarkeit: Kostengenauigkeit ±25 % · Projektfreigabe: ±10 %</small></div></article></div>
     </section>
 
-    <section class="workspace tab-panel hidden klausur-workspace" id="klausur-panel">
-      <div class="klausur-hero">
-        <div>
-          <p class="eyebrow">Mini Klausur Baukommission · 14. August 2026</p>
-          <h2>Erst die Logik.<br><em>Dann die Priorisierung.</em></h2>
-          <p>09.00 bis 15.00 Uhr · Iris Ammann, Alex Tschuppert und Fabrizio Laneve</p>
-        </div>
-        <aside>
-          <small>Erfolg um 15.00 Uhr</small>
-          <strong>Wir wissen, wie wir Vorhaben planen, Verantwortung zuweisen und Überlastungen früh erkennen.</strong>
-          <span>Die definitive zeitliche Priorisierung folgt auf dieser Grundlage.</span>
-        </aside>
-      </div>
-
-      <nav class="agenda-strip" aria-label="Tagesablauf">
-        <a href="#k-ziel"><time>09.00</time><span>Zielbild</span></a>
-        <a href="#k-basis"><time>09.20</time><span>Grundlagen</span></a>
-        <a href="#k-rollen"><time>09.45</time><span>Intern & extern</span></a>
-        <a href="#k-planung"><time>10.45</time><span>Projektpass</span></a>
-        <a href="#k-portfolio"><time>11.20</time><span>Ressourcen</span></a>
-        <a class="lunch" href="#k-mittag"><time>12.00</time><span>Mittag</span></a>
-        <a href="#k-faelle"><time>13.00</time><span>3 Fälle</span></a>
-        <a href="#k-test"><time>13.45</time><span>Belastungstest</span></a>
-        <a href="#k-fazit"><time>14.30</time><span>Konsequenzen</span></a>
-      </nav>
-
-      <div class="klausur-principle">
-        <span>Arbeitsweise</span>
-        <p>Die Seite gibt Struktur und hält Ergebnisse fest. Der Inhalt entsteht im Gespräch, mit Post its und an der Wand. Das Tool ersetzt weder Diskussion noch Entscheid.</p>
-      </div>
-
-      <article class="session-block featured" id="k-ziel" data-session="zielbild">
-        <header><div><time>09.00 bis 09.20 Uhr</time><p class="eyebrow">01 · Gemeinsamer Ausgangspunkt</p><h3>Die Bauorganisation, die wir schaffen wollen</h3></div><span class="duration">20 Min.</span></header>
-        <div class="session-content target-copy">
-          <p>Die BGR will ihre Liegenschaften langfristig erhalten und weiterentwickeln. Dazu plant sie über rund 30 Jahre und möchte im Durchschnitt zwei neue Machbarkeitsstudien pro Jahr anstossen.</p>
-          <p>Damit wächst nicht nur die Zahl der Vorhaben. Auch die Anforderungen an Planung, Führung und Zusammenarbeit nehmen zu. Unterhalt, Sanierungen, Neubauten und Arealentwicklungen laufen teilweise gleichzeitig. Sie beanspruchen dieselben Schlüsselpersonen, dieselben Entscheidungsgremien und dieselben finanziellen Spielräume.</p>
-          <p>Eine Organisation kann einzelne Projekte erfolgreich bewältigen und im Gesamtportfolio trotzdem überlastet sein. Ein Projekt kann fachlich sinnvoll und finanziell grundsätzlich tragbar sein, obwohl die dafür benötigten Menschen im entscheidenden Zeitraum nicht verfügbar sind. Eine Rolle kann auf dem Papier besetzt sein, obwohl Stellvertretung, Entscheidungsrecht oder unabhängige Kontrolle fehlen.</p>
-          <p>Die BGR braucht deshalb eine Bauorganisation, die nicht nur einzelne Projekte betrachtet. Sie braucht eine gemeinsame Sicht auf das gesamte Portfolio.</p>
-          <p>Der Gesamtvorstand trägt die strategische Gesamtverantwortung. Die Baukommission pflegt und steuert die gemeinsame Sicht auf das Bauportfolio. Die Geschäftsstelle sichert den laufenden Betrieb, den Unterhalt und die ihr übertragenen Vorhaben.</p>
-          <p>Jedes relevante Vorhaben braucht eine klar benannte Projektverantwortung auf BGR Seite. Die operative Projektleitung und die benötigten Fachleistungen können innerhalb der BGR oder durch externe Partner erbracht werden. Dazu gehören auch Iris und Alex mit ihrem Fachwissen, ihre Firmen, Büro 8, Tresto und weitere geeignete Partner.</p>
-          <p>Entscheidend ist nicht allein, ob eine Leistung intern oder extern erbracht wird. Entscheidend ist, dass Auftrag, Verantwortung, operative Führung, Fachleistung, Entscheidung und Kontrolle sauber unterschieden und nachvollziehbar zugewiesen sind.</p>
-          <p>Die Zusammenarbeit mit externen Partnern soll die Handlungsfähigkeit der BGR stärken. Sie darf aber nicht dazu führen, dass die BGR ihre eigene Verantwortung verliert oder von einzelnen Personen und Firmen abhängig wird.</p>
-          <p>Wir brauchen deshalb ein tragfähiges Organisationsmodell, das genügend Ressourcen und Stellvertretung sicherstellt und nicht von einzelnen Personen abhängig ist.</p>
-          <div class="target-callout"><span>Unser Ziel</span><strong>Ein gemeinsames Bild des gesamten Portfolios. Klare Verantwortung für jedes Vorhaben. Gesicherte Kapazitäten vor dem Start. Saubere Entscheide an den wichtigen Übergängen. Transparente Regeln für interne und externe Leistungen.</strong></div>
-          <blockquote>Wir organisieren nicht zuerst Menschen um einzelne Projekte. Wir definieren zuerst das System, sehen danach das ganze Portfolio und besetzen erst dann die notwendigen Rollen.</blockquote>
-          <div class="work-card"><h4>Gemeinsame Prüfung</h4><div class="question-grid"><p><b>Trifft den Kern</b>Welche Aussage ist für uns zentral?</p><p><b>Schärfen</b>Was stimmt, ist aber noch nicht klar genug?</p><p><b>Vorbehalt</b>Wo besteht eine offene oder andere Sicht?</p></div><strong class="key-question">Ist das die Bauorganisation, die wir gemeinsam schaffen wollen?</strong></div>
-          <div class="challenge-note"><b>Bewusst prüfen</b><p>Sind zwei neue Machbarkeitsstudien pro Jahr aus dem Portfolio abgeleiteter Bedarf oder eine veränderbare Ambition?</p></div>
-        </div>
-        <div class="session-result"><label><span>Ergebnis und Schärfungen</span><textarea data-session-note="zielbild" placeholder="Was bestätigen wir? Was verändern wir? Wo bleibt ein Vorbehalt?"></textarea></label><select data-session-status="zielbild"><option>offen</option><option>in Arbeit</option><option>abgeschlossen</option><option>parkiert</option></select></div>
-      </article>
-
-      <article class="session-block" id="k-basis" data-session="grundlagen">
-        <header><div><time>09.20 bis 09.45 Uhr</time><p class="eyebrow">02 · Nicht nochmals erfinden</p><h3>Was gilt. Was ist entschieden. Was bleibt offen.</h3></div><span class="duration">25 Min.</span></header>
-        <div class="session-content">
-          <p class="session-intro">Die Grundlagen werden nicht einzeln vorgelesen. Nur ein Vorbehalt oder eine unklare Anwendung öffnet die Diskussion.</p>
-          <div class="status-key"><span class="fixed">gesetzt</span><span class="precise">präzisieren</span><span class="decide">entscheiden</span><span class="later">später klären</span></div>
-          <div class="basis-grid">
-            <section><span class="basis-type fixed">Formell gesetzt</span><h4>Baukommission und Geschäftsstelle</h4><ul><li>Die Baukommission pflegt die Immobilienstrategie, ordnet Vorhaben zeitlich ein, definiert Verantwortlichkeiten und bereitet Entscheide vor.</li><li>Die Geschäftsstelle verantwortet Betrieb, Unterhalt und übertragene kleinere Vorhaben.</li><li>Geschäftsführung und Bauprojektleitung verfügen pro Einzelfall über eine Ausgabenkompetenz bis CHF 15'000.</li><li>Ab CHF 15'000 braucht es mindestens zwei, über CHF 50'000 mindestens drei Offerten. Bei baulichen Arbeiten über CHF 50'000 braucht es einen Werkvertrag.</li><li>Separat beauftragte Spezialistenleistungen sind möglich. Bei Vergabe und Kontrolle gilt für betroffene Organmitglieder Ausstand.</li></ul></section>
-            <section><span class="basis-type fixed">Gemeinsam entschieden</span><h4>Planung und Instrument</h4><ul><li>Die Priorisierung erfolgt erst nach der Mini Klausur.</li><li>Projektpass und Gesamtportfolio gehören zusammen.</li><li>Excel bleibt die verbindliche Mutter.</li><li>Die Baukommission verantwortet die Pflege und kann Arbeiten delegieren.</li><li>Menschen und Geld werden gemeinsam betrachtet.</li><li>Bedarf und Verfügbarkeit werden getrennt ausgewiesen.</li><li>Kommunikation mit Mieterschaft und Genossenschaft ist nicht Bestandteil dieses Instruments.</li></ul></section>
-            <section><span class="basis-type precise">Planungslogik</span><h4>Rollend genauer werden</h4><ul><li>0 bis 12 Monate: konkrete Quartalssicht.</li><li>13 bis 36 Monate: hohe Genauigkeit und rollende Schärfung.</li><li>3 bis 10 Jahre: Bandbreiten und geringere Genauigkeit.</li><li>Mehr als 10 Jahre: erste strategische Schätzung.</li><li>Personeller Bedarf wird als Bandbreite von Personentagen pro Quartal erfasst.</li></ul></section>
-            <section><span class="basis-type decide">Heute klären</span><h4>Offene Grundsätze</h4><ul><li>Welche Verantwortung bleibt zwingend innerhalb der BGR?</li><li>Wie trennen wir Organrolle und separat beauftragte Leistung?</li><li>Welche Kontrolle braucht es bei Mehrfachrollen?</li><li>Wann ist ein Vorhaben ausreichend abgesichert?</li><li>Was braucht ein Start trotz fehlender Absicherung?</li><li>Welche Reserve halten wir für Schäden und Chancen frei?</li></ul></section>
-          </div>
-          <div class="work-card compact"><h4>Arbeitsauftrag</h4><p>Nur Abweichungen markieren. Was trägt, bleibt stehen. Was unklar ist, erhält den Status präzisieren, entscheiden oder später klären.</p></div>
-        </div>
-        <div class="session-result"><label><span>Abweichungen und offene Grundlagen</span><textarea data-session-note="grundlagen" placeholder="Nur festhalten, was nicht trägt oder weiter geklärt werden muss."></textarea></label><select data-session-status="grundlagen"><option>offen</option><option>in Arbeit</option><option>abgeschlossen</option><option>parkiert</option></select></div>
-      </article>
-
-      <article class="session-block" id="k-rollen" data-session="rollen">
-        <header><div><time>09.45 bis 10.35 Uhr</time><p class="eyebrow">03 · Zentrale Grundsatzdiskussion</p><h3>BGR Organe. Geschäftsstelle. BGR nah extern. Unabhängig extern.</h3></div><span class="duration">50 Min.</span></header>
-        <div class="session-content">
-          <div class="three-worlds four-worlds"><section><span>01</span><h4>BGR Organe</h4><p>Gesamtvorstand, Baukommission sowie Iris und Alex in ihrer Organfunktion.</p></section><section><span>02</span><h4>Geschäftsstelle</h4><p>Geschäftsführung und Mitarbeitende der Geschäftsstelle mit ihren Linienaufgaben und übertragenen Vorhaben.</p></section><section><span>03</span><h4>BGR nah extern</h4><p>Iris oder Alex mit separat beauftragter Fachleistung, Büro 8, TRESTO und weitere direkt verbundene Partner.</p></section><section><span>04</span><h4>Unabhängig extern</h4><p>Planungsbüros, Fachplaner, Bauleitungen, Projektsteuerungen und weitere Partner ohne persönliche oder organisatorische Verbindung zu BGR Organen.</p></section></div>
-          <p class="session-intro">Die vier Bereiche sind keine Qualitätsstufen. Entscheidend sind Auftrag, Eignung, Kapazität, Preis, Kontrolle und die klare Rolle. Die Geschäftsstelle wird bewusst separat betrachtet, weil Linienverantwortung und verfügbare Kapazität nicht mit einer Organrolle gleichgesetzt werden dürfen.</p>
-          <div class="role-table-wrap"><table class="role-table"><thead><tr><th>Funktion</th><th>BGR Organe</th><th>Geschäftsstelle</th><th>BGR nah extern</th><th>Unabhängig extern</th></tr></thead><tbody><tr><th>Projektverantwortung BGR</th><td>prüfen</td><td>prüfen</td><td>prüfen</td><td>prüfen</td></tr><tr><th>Operative Projektleitung</th><td>prüfen</td><td>prüfen</td><td>prüfen</td><td>prüfen</td></tr><tr><th>Fachleistung und Planung</th><td>prüfen</td><td>prüfen</td><td>prüfen</td><td>prüfen</td></tr><tr><th>Auftragserteilung</th><td>prüfen</td><td>prüfen</td><td>prüfen</td><td>prüfen</td></tr><tr><th>Formeller Entscheid</th><td>prüfen</td><td>prüfen</td><td>prüfen</td><td>prüfen</td></tr><tr><th>Kontrolle und Abnahme</th><td>prüfen</td><td>prüfen</td><td>prüfen</td><td>prüfen</td></tr><tr><th>Stellvertretung</th><td>prüfen</td><td>prüfen</td><td>prüfen</td><td>prüfen</td></tr></tbody></table></div>
-          <div class="work-card"><h4>Fragen zu jeder Funktion</h4><div class="question-list"><span>Ist die Zuordnung möglich?</span><span>Unter welchen Bedingungen?</span><span>Wer beauftragt?</span><span>Wer entscheidet?</span><span>Wer kontrolliert?</span><span>Wo gilt Ausstand?</span></div></div>
-          <div class="principle-grid"><p><b>Verantwortung</b>Eine benannte Projektverantwortung bleibt auf BGR Seite.</p><p><b>Leistung</b>Operative Führung und Fachleistungen können intern oder extern erfolgen.</p><p><b>Kompetenz</b>Eine operative Rolle schafft keine zusätzliche formelle Entscheidungskompetenz.</p><p><b>Kontrolle</b>Wer eine Leistung erbringt, kontrolliert und genehmigt sie nicht gleichzeitig allein.</p><p><b>Stellvertretung</b>Sie muss geeignet, informiert und tatsächlich verfügbar sein.</p><p><b>Partnerwahl</b>Fachwissen, Kapazität, Preis, Abhängigkeit und Kontrollmöglichkeit zählen.</p></div>
-          <div class="expected"><span>Erwartetes Ergebnis</span><strong>Für jede Funktion: möglich, möglich unter Bedingungen, nicht sinnvoll oder formell zu prüfen.</strong></div>
-        </div>
-        <div class="session-result"><label><span>Unsere Zuweisungslogik</span><textarea data-session-note="rollen" placeholder="Welche Funktionen bleiben intern? Was ist unter welchen Bedingungen extern möglich?"></textarea></label><select data-session-status="rollen"><option>offen</option><option>in Arbeit</option><option>abgeschlossen</option><option>parkiert</option></select></div>
-      </article>
-
-      <div class="break-card"><time>10.35 bis 10.45 Uhr</time><strong>Pause</strong></div>
-
-      <article class="session-block" id="k-planung" data-session="planung">
-        <header><div><time>10.45 bis 11.20 Uhr</time><p class="eyebrow">04 · Vom Vorhaben zum Entscheid</p><h3>Planungslogik und Projektpass</h3></div><span class="duration">35 Min.</span></header>
-        <div class="session-content">
-          <div class="horizon-work"><section><b>0 bis 12 Monate</b><span>konkret nach Quartalen</span><p>Phasen, Termine, Rollen, PT, Geld, Übergabe, Entscheid und Stellvertretung.</p></section><section><b>13 bis 36 Monate</b><span>hoch und rollend genau</span><p>Phasen, intensive Zeitfenster, Organisation, Ressourcenband und Jahressicht.</p></section><section><b>3 bis 10 Jahre</b><span>Orientierung und Bandbreiten</span><p>Zweck, Zeitraum, erste Kosten, Organisationsstärke und Abhängigkeiten.</p></section><section><b>Mehr als 10 Jahre</b><span>erste strategische Schätzung</span><p>Anlass, Grössenordnung, Horizont und nächste Überprüfung.</p></section></div>
-          <div class="project-pass-questions"><h4>Die sechs Fragen des Projektpasses</h4><ol><li><b>Vorhaben</b><span>Was planen wir und was ist der nächste sinnvolle Schritt?</span></li><li><b>Zeit</b><span>Wann und mit welcher Genauigkeit?</span></li><li><b>Geld</b><span>Was kostet es, wie verteilt es sich und ist es finanzierbar?</span></li><li><b>Rollen</b><span>Wer verantwortet, führt, leistet, kontrolliert und vertritt?</span></li><li><b>Ressourcen</b><span>Wer wird wann mit welcher Bandbreite benötigt?</span></li><li><b>Entscheid</b><span>Was wird übergeben, wer entscheidet bis wann und was geschieht bei einer Lücke?</span></li></ol></div>
-          <strong class="key-question">Welchen Entscheid können wir mit dieser Information besser treffen?</strong>
-          <div class="work-card compact"><h4>Arbeitsauftrag</h4><p>Die Inhalte mit zwingend, hilfreich, nur bei bestimmten Vorhaben oder nicht nötig bewerten. Nicht über Formulierungsdetails diskutieren.</p></div>
-        </div>
-        <div class="session-result"><label><span>Mindestlogik des Projektpasses</span><textarea data-session-note="planung" placeholder="Was ist zwingend? Was kann entfallen? Was hängt vom Zeithorizont ab?"></textarea></label><select data-session-status="planung"><option>offen</option><option>in Arbeit</option><option>abgeschlossen</option><option>parkiert</option></select></div>
-      </article>
-
-      <article class="session-block" id="k-portfolio" data-session="portfolio">
-        <header><div><time>11.20 bis 12.00 Uhr</time><p class="eyebrow">05 · Was ist gemeinsam tragbar?</p><h3>Portfolio, Menschen und Geld</h3></div><span class="duration">40 Min.</span></header>
-        <div class="session-content">
-          <div class="target-callout"><span>Grundsatz</span><strong>Der Projektpass zeigt, ob ein einzelnes Vorhaben abgesichert ist. Die Portfoliosicht zeigt, ob alle Vorhaben gemeinsam tragbar sind.</strong></div>
-          <div class="logic-columns"><section><h4>Bedarf pro Vorhaben</h4><ul><li>Person oder Partner</li><li>von Quartal bis Quartal</li><li>PT minimum und maximum</li><li>Zuweisung gesichert, abzuklären oder nicht gesichert</li></ul></section><section><h4>Verfügbare Kapazität</h4><ul><li>Person oder Partner</li><li>betrachteter Zeitraum</li><li>PT minimum und maximum</li><li>provisorisch oder bestätigt</li></ul></section><section><h4>Geld</h4><ul><li>Gesamtkosten und Genauigkeit</li><li>bekannte und offene Jahresbeträge</li><li>Finanzierungsstatus</li><li>Finanzrahmen pro Jahr als Bandbreite</li></ul></section></div>
-          <div class="assessment-row"><span class="secured"><b>tragbar</b>Verfügbarkeit deckt den Bedarf</span><span class="uncertain"><b>unsicher</b>Bandbreiten überschneiden sich</span><span class="gap"><b>Lücke</b>Verfügbarkeit reicht nicht</span><span class="open"><b>offen</b>Grundlage fehlt</span></div>
-          <div class="challenge-note"><b>Wichtige Grenze</b><p>Angaben zu Iris und Alex können gemeinsam beurteilt werden. Angaben zur Geschäftsstelle oder zu nicht anwesenden Partnern bleiben Annahmen, bis sie bestätigt sind.</p></div>
-          <div class="work-card"><h4>Wenn ein Vorhaben nicht abgesichert ist</h4><div class="question-list"><span>verschieben</span><span>verlangsamen</span><span>extern verstärken</span><span>anderes Vorhaben anpassen</span><span>Finanzierung schaffen</span><span>bewusster Risikoentscheid</span></div><strong class="key-question small">Braucht ein Start trotz Lücke gleichzeitig eine konkrete Ressourcenmassnahme?</strong></div>
-          <div class="tool-jump"><div><span>Prototyp prüfen</span><strong>Entscheidungssicht, Zeit und Geld, Menschen und Partner</strong></div><button class="primary-button" data-tab="portfolio">Cockpit öffnen →</button></div>
-        </div>
-        <div class="session-result"><label><span>Ressourcenlogik und Anpassungen am Prototyp</span><textarea data-session-note="portfolio" placeholder="Was hilft? Was fehlt? Wo entsteht ein falscher Eindruck?"></textarea></label><select data-session-status="portfolio"><option>offen</option><option>in Arbeit</option><option>abgeschlossen</option><option>parkiert</option></select></div>
-      </article>
-
-      <div class="break-card lunch" id="k-mittag"><time>12.00 bis 13.00 Uhr</time><strong>Mittagspause</strong><span>Eine volle Stunde. Danach beginnt der Praxistest.</span></div>
-
-      <article class="session-block" id="k-faelle" data-session="faelle">
-        <header><div><time>13.00 bis 13.45 Uhr</time><p class="eyebrow">06 · Drei unterschiedliche Realitäten</p><h3>Je 15 Minuten. Genug, um die Logik zu brechen.</h3></div><span class="duration">45 Min.</span></header>
-        <div class="session-content">
-          <p class="session-intro">Wir planen die Fälle nicht vollständig. Wir klären nur Rollen, intensive Phasen, Menschen, Geld und den nächsten Entscheid.</p>
-          <div class="case-grid"><section><span>13.00</span><h4>Ruopigenplatz 28</h4><p>Ersatz Küchen, Vordach und Eingangstreppe.</p><strong>Wo endet Unterhalt und wo beginnt ein Projekt mit eigener Absicherung?</strong><button data-klausur-project="ruopigenplatz-28">Im Projektpass öffnen →</button></section><section><span>13.15</span><h4>Obermättlistrasse 23 bis 34</h4><p>Wärmeerzeugung, Photovoltaik und Flachdach.</p><strong>Wie organisieren wir ein gebündeltes Vorhaben mit mehreren Abhängigkeiten?</strong><button data-klausur-project="obermaettli-23-34">Im Projektpass öffnen →</button></section><section><span>13.30</span><h4>Vorder Ruopigen</h4><p>Strategische Arealentwicklung mit externer Projektorganisation.</p><strong>Wie bleibt die BGR in Verantwortung und handlungsfähig?</strong><button data-klausur-project="vorder-ruopigen">Im Projektpass öffnen →</button></section></div>
-          <div class="work-card compact"><h4>Nach jedem Fall</h4><div class="question-list"><span>Was trägt?</span><span>Wo wird es unklar?</span><span>Welche Information fehlt?</span><span>Was ändern wir?</span></div></div>
-        </div>
-        <div class="session-result"><label><span>Erkenntnisse aus den drei Fällen</span><textarea data-session-note="faelle" placeholder="Stärken, Schwächen und notwendige Änderungen der Logik."></textarea></label><select data-session-status="faelle"><option>offen</option><option>in Arbeit</option><option>abgeschlossen</option><option>parkiert</option></select></div>
-      </article>
-
-      <article class="session-block" id="k-test" data-session="belastungstest">
-        <header><div><time>13.45 bis 14.20 Uhr</time><p class="eyebrow">07 · Herzstück des Tages</p><h3>Portfolio Belastungstest</h3></div><span class="duration">35 Min.</span></header>
-        <div class="session-content">
-          <div class="test-flow"><section><span>01</span><h4>Gleichzeitigkeit</h4><p>Drei Fälle und Gesamtportfolio auf eine gemeinsame Zeitachse legen.</p></section><i>→</i><section><span>02</span><h4>Kollisionen</h4><p>Menschen, Partner, offene Leitungen, Geld und Wissen prüfen.</p></section><i>→</i><section><span>03</span><h4>Ausfall</h4><p>Stärkste Schlüsselressource fällt für ein Quartal vollständig aus.</p></section></div>
-          <div class="work-card"><h4>Prüffragen</h4><div class="two-list"><ul><li>Welche Vorhaben geraten zuerst unter Druck?</li><li>Welche Übergaben funktionieren nicht mehr?</li><li>Wo fehlt Wissen oder Stellvertretung?</li><li>Welche Leistung kann extern aufgefangen werden?</li></ul><ul><li>Was müsste verschoben oder verlangsamt werden?</li><li>Welche zusätzliche Kapazität braucht es?</li><li>Wo fehlen belastbare Daten?</li><li>Welche Entscheidung wird sofort nötig?</li></ul></div><button class="primary-button" data-tab="portfolio" data-open-resources="true">Belastungstest im Cockpit öffnen →</button></div>
-          <blockquote>Wenn das Modell diesen Test nicht besteht, verändern wir nicht die Realität passend zum Modell. Wir verändern das Modell, die zeitliche Einordnung oder die verfügbaren Ressourcen.</blockquote>
-        </div>
-        <div class="session-result"><label><span>Überlastungen, Abhängigkeiten und Handlungsoptionen</span><textarea data-session-note="belastungstest" placeholder="Was kippt? Warum? Welche Konsequenz ziehen wir daraus?"></textarea></label><select data-session-status="belastungstest"><option>offen</option><option>in Arbeit</option><option>abgeschlossen</option><option>parkiert</option></select></div>
-      </article>
-
-      <div class="break-card"><time>14.20 bis 14.30 Uhr</time><strong>Pause</strong></div>
-
-      <article class="session-block" id="k-fazit" data-session="fazit">
-        <header><div><time>14.30 bis 14.50 Uhr</time><p class="eyebrow">08 · Verdichten</p><h3>Was folgt daraus?</h3></div><span class="duration">20 Min.</span></header>
-        <div class="session-content"><div class="conclusion-grid"><p><b>Zielbild</b>Was bestätigen oder schärfen wir?</p><p><b>Grundlagen</b>Wo braucht es Präzisierung oder Beschluss?</p><p><b>Zuweisung</b>Was bleibt intern, was geht wohin extern?</p><p><b>Instrument</b>Was braucht Projektpass und Portfolio?</p><p><b>Ressourcen</b>Wo fehlen Menschen, Geld oder Bestätigung?</p><p><b>Weiteres Vorgehen</b>Was geht an Geschäftsstelle oder Gesamtvorstand?</p></div><div class="status-key large"><span class="fixed">bestätigt</span><span class="precise">im Pilot testen</span><span class="later">weiter klären</span><span class="decide">Antrag Gesamtvorstand</span></div></div>
-        <div class="session-result"><label><span>Gemeinsamer Vorschlag</span><textarea data-session-note="fazit" placeholder="Unsere tragenden Aussagen, offenen Punkte und Anträge."></textarea></label><select data-session-status="fazit"><option>offen</option><option>in Arbeit</option><option>abgeschlossen</option><option>parkiert</option></select></div>
-      </article>
-
-      <article class="session-block closing" data-session="abschluss">
-        <header><div><time>14.50 bis 15.00 Uhr</time><p class="eyebrow">09 · Verbindlichkeit</p><h3>Nächste Schritte</h3></div><span class="duration">10 Min.</span></header>
-        <div class="session-content"><div class="question-grid"><p><b>Klarer geworden</b>Was nehme ich mit?</p><p><b>Vorbehalt</b>Was bleibt für mich offen?</p><p><b>Verantwortung</b>Welchen nächsten Schritt übernehme ich?</p></div><div class="expected"><span>Um 15.00 Uhr</span><strong>Aufgabe, Verantwortung, Termin und benötigter Entscheid sind festgehalten.</strong></div></div>
-        <div class="session-result"><label><span>Verbindliche nächste Schritte</span><textarea data-session-note="abschluss" placeholder="Aufgabe · Verantwortung · Termin · benötigter Entscheid"></textarea></label><select data-session-status="abschluss"><option>offen</option><option>in Arbeit</option><option>abgeschlossen</option><option>parkiert</option></select></div>
-      </article>
-
-      <section class="klausur-export">
-        <div><p class="eyebrow">Lokaler Klausurstand</p><h3>Ergebnisse sichern</h3><p>Notizen und Status werden nur in diesem Browser gespeichert. Vor einem Gerätewechsel oder am Ende des Tages exportieren.</p></div>
-        <div class="klausur-export-actions"><button class="primary-button" id="export-session-text">Protokoll laden ↓</button><button class="secondary-button" id="export-session-csv">Ergebnisse als CSV ↓</button><button class="danger-link" id="reset-session">Klausurnotizen zurücksetzen</button></div>
-      </section>
-    </section>
-
-    <section class="workspace tab-panel hidden guide-workspace" id="guide-panel">
-      <div class="section-heading"><div><p class="eyebrow">Anleitung · Klausurstand 14.08.2026</p><h2>Das Bauportfolio sicher nutzen.</h2></div><button class="secondary-button" id="download-guide">Anleitung laden ↓</button></div>
-      <div class="guide-intro"><strong>Die wichtigste Regel</strong><p>Excel bleibt die verbindliche Mutter. Alle Eingaben auf dieser Seite bilden einen lokalen Arbeitsstand und verändern die Excel Datei nicht.</p></div>
-      <div class="guide-layout">
-        <nav class="guide-nav"><a href="#g-start">Schnellstart</a><a href="#g-cockpit">Cockpit</a><a href="#g-project">Vorhaben</a><a href="#g-resources">Ressourcen</a><a href="#g-test">Belastungstest</a><a href="#g-data">Speichern & Export</a><a href="#g-reset">Zurücksetzen</a></nav>
-        <div class="guide-content">
-          <section id="g-start"><span>01</span><h3>Schnellstart</h3><ol><li>Cockpit öffnen und Entscheidungssicht betrachten.</li><li>Zeitraum, Projektart oder Ressource filtern.</li><li>Auffälligkeiten in Menschen und Partner, Rollen oder Geld öffnen.</li><li>Erst danach einzelne Vorhaben bearbeiten.</li><li>Nach wichtigen Arbeiten alle CSV Dateien exportieren.</li></ol></section>
-          <section id="g-cockpit"><span>02</span><h3>Die vier Cockpitsichten</h3><dl><div><dt>Entscheidungssicht</dt><dd>Zeigt Klärungsbedarf, offene Rollen und fehlende Grundlagen. Sie ist keine automatische Prioritätenliste.</dd></div><div><dt>Zeit und Geld</dt><dd>Zeigt Vorhaben auf der Zeitachse und bekannte Jahresbelastungen gegen den Finanzrahmen.</dd></div><div><dt>Menschen und Partner</dt><dd>Vergleicht den Bedarf in Personentagen pro Quartal mit der verfügbaren Kapazität.</dd></div><div><dt>Alle Vorhaben</dt><dd>Listet aktive Vorhaben und erlaubt Suche sowie Filter nach Horizont, Art, Zeitraum und Ressource.</dd></div></dl></section>
-          <section id="g-project"><span>03</span><h3>Ein Vorhaben bearbeiten</h3><ol><li>Unter Alle Vorhaben den Pfeil beim gewünschten Objekt wählen.</li><li>Vorhaben, Zeit und Geld, Rollen, Übergabe und Ressourcen prüfen.</li><li>Offene Angaben bewusst offen lassen. Keine Scheingenauigkeit erzeugen.</li><li>Arbeitsstand speichern.</li><li>Den erzeugten Projektpass prüfen.</li></ol><p>Die Projektverantwortung BGR hält Ziel, Auftrag und Entscheide zusammen. Sie ist nicht automatisch die operative Projektleitung.</p></section>
-          <section id="g-resources"><span>04</span><h3>Bedarf und Verfügbarkeit</h3><p>Im Projekt werden Ressource, Zeitraum und PT Bandbreite erfasst. Im Cockpit wird die verfügbare Kapazität separat hinterlegt.</p><div class="assessment-row"><span class="secured"><b>tragbar</b>Kapazität deckt Bedarf</span><span class="uncertain"><b>unsicher</b>Bandbreiten überlappen</span><span class="gap"><b>Lücke</b>Bedarf über Kapazität</span><span class="open"><b>offen</b>Grundlage fehlt</span></div></section>
-          <section id="g-test"><span>05</span><h3>Ausfall simulieren</h3><ol><li>Menschen und Partner öffnen.</li><li>Ressource und Zeitraum wählen.</li><li>Ausfall simulieren.</li><li>Neue Lücken und betroffene Quartale prüfen.</li><li>Simulation beenden.</li></ol><p>Die Simulation verändert keine Projektdaten.</p></section>
-          <section id="g-data"><span>06</span><h3>Lokaler Arbeitsstand und Export</h3><p>Der Arbeitsstand wird nur im verwendeten Browser auf dem verwendeten Gerät gespeichert. Andere Geräte sehen ihn nicht. Das Löschen der Browserdaten kann ihn entfernen.</p><p>Unter Excel Übergabe stehen Projektübersicht, Ressourcenübersicht und Änderungsprotokoll bereit. Die Klausur verfügt zusätzlich über ein Protokoll und einen CSV Export.</p></section>
-          <section id="g-reset"><span>07</span><h3>Ändern, archivieren und zurücksetzen</h3><dl><div><dt>Änderungen verwerfen</dt><dd>Lädt den zuletzt gespeicherten lokalen Stand.</dd></div><div><dt>Excel Stand wiederherstellen</dt><dd>Setzt ein Vorhaben auf den unveränderten Ausgangsstand zurück.</dd></div><div><dt>Archivieren</dt><dd>Blendet ein Vorhaben aus dem aktiven Portfolio aus. Es kann wieder aktiviert werden.</dd></div><div><dt>Endgültig löschen</dt><dd>Entfernt nur den lokalen Datensatz. Excel bleibt unverändert.</dd></div><div><dt>Rückgängig</dt><dd>Stellt eine der letzten zehn gespeicherten Aktionen wieder her.</dd></div><div><dt>Gesamt zurücksetzen</dt><dd>Verwirft sämtliche lokalen Portfolioanpassungen und lädt den Excel Ausgangsstand.</dd></div></dl></section>
-        </div>
-      </div>
-    </section>
-
-    <footer><div><img src="bgr-mark.png" alt=""><span>Baugenossenschaft Reussbühl</span></div><p>Klausurprototyp · 14.08.2026</p></footer>
+    <section class="export-band" id="export"><div class="shell export-grid"><div><p class="eyebrow">Kontrollierte Übergabe</p><h2>Excel bleibt die Mutter.</h2><p>Der Prototyp speichert nur auf diesem Gerät. Exportiert werden lesbare CSV-Dateien für die bewusste Übernahme.</p></div><div class="export-actions"><button class="button light" id="export-projects">Projekte exportieren</button><button class="button light" id="export-resources">Ressourcen exportieren</button><button class="button light" id="export-changes">Änderungen exportieren</button><button class="button danger-light" id="reset-all">Arbeitsstand zurücksetzen</button></div></div></section>
   </main>
-  <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <script type="module" src="app.js"></script>
+
+  <dialog id="project-dialog" class="dialog wide"><form method="dialog" id="project-form">
+    <div class="dialog-head"><div><p class="eyebrow">Projekt bearbeiten</p><h2 id="project-dialog-title">Projekt</h2></div><button class="close" value="cancel" aria-label="Schliessen">×</button></div><input type="hidden" id="project-id">
+    <div class="dialog-tabs"><button type="button" class="active" data-form-tab="base">Grunddaten</button><button type="button" data-form-tab="roles">Rollen</button><button type="button" data-form-tab="resources">Ressourcen</button><button type="button" data-form-tab="milestones">Meilensteine</button></div>
+    <div class="form-panel" data-panel="base">
+      <div class="form-grid two"><label><span>Objekt</span><input id="f-object" required></label><label><span>Projektart</span><select id="f-kind"><option>Kleinprojekt</option><option>Bauprojekt</option></select></label></div>
+      <label><span>Massnahme</span><textarea id="f-measure" required></textarea></label>
+      <div class="definition-note"><strong>Kleinprojekt</strong><span>Ohne externen Planer, Architekten oder vergleichbare Fachplanung und innerhalb des bewilligten Projektrahmens. Die genaue Grenze wird später im Handbuch festgelegt.</span></div>
+      <div class="form-grid three"><label><span>Projektphase</span><select id="f-phase"></select></label><label><span>Start</span><select id="f-start"></select></label><label><span>Ende</span><select id="f-end"></select></label></div>
+      <div class="form-grid three"><label><span>Gesamtkosten CHF</span><input id="f-cost" inputmode="decimal"></label><label><span>Kostengenauigkeit</span><select id="f-accuracy"><option>offen</option><option>Erste Schätzung</option><option>±25 %</option><option>±10 %</option></select></label><label><span>Bereits freigegeben</span><select id="f-approved"><option value="no">nein</option><option value="yes">ja</option></select></label></div>
+      <label><span>Nächster Entscheid oder Klärungspunkt</span><textarea id="f-next"></textarea></label>
+    </div>
+    <div class="form-panel hidden" data-panel="roles"><p class="panel-intro">Die Funktion ist entscheidend. Nicht die Nähe zur BGR. Bauherrenbegleitung wird separat mandatiert und beginnt spätestens mit der Machbarkeitsstudie.</p><div class="form-grid two"><label><span>Mitglied Geschäftsstelle</span><input id="f-gs" placeholder="Name oder offen"></label><label><span>Mitglied Baukommission</span><input id="f-bk" placeholder="Name oder offen"></label><label><span>Mitglied Vorstand, Gesamtsicht</span><input id="f-vs" placeholder="nach Bedarf oder offen"></label><label><span>Bauherrenbegleitung</span><input id="f-bhb" placeholder="z. B. TRESTO, Büro 8"></label><label><span>Unabhängige Kontrolle</span><input id="f-control" placeholder="Name/Firma oder offen"></label><label><span>Stellvertretung</span><input id="f-deputy" placeholder="Name/Firma oder offen"></label></div></div>
+    <div class="form-panel hidden" data-panel="resources"><div class="repeat-head"><div><strong>Bedarf dieses Projekts</strong><span>Eine Zeile pro Ressource und Quartal.</span></div><button type="button" class="button ghost" id="add-demand">+ Bedarf</button></div><div class="edit-table" id="demand-editor"></div><div class="repeat-head money-head"><div><strong>Geld pro Quartal</strong><span>Optional präzisieren. Jahreswerte aus Excel bleiben erhalten.</span></div><button type="button" class="button ghost" id="add-finance">+ Quartalsbetrag</button></div><div class="edit-table" id="finance-editor"></div></div>
+    <div class="form-panel hidden" data-panel="milestones"><p class="panel-intro">Die Meilensteine folgen dem BGR Normprozess. Die beiden grossen Übergänge sind hervorgehoben und benötigen den Gesamtvorstand.</p><div class="milestone-editor" id="milestone-editor"></div></div>
+    <div class="dialog-actions"><button type="button" class="text-danger" id="delete-project">Projekt löschen</button><span></span><button class="button ghost" value="cancel">Abbrechen</button><button type="submit" class="button primary" value="default">Arbeitsstand speichern</button></div>
+  </form></dialog>
+
+  <dialog id="capacity-dialog" class="dialog"><form method="dialog" id="capacity-form">
+    <div class="dialog-head"><div><p class="eyebrow">Verfügbarkeit</p><h2>Kapazität erfassen</h2></div><button class="close" value="cancel" aria-label="Schliessen">×</button></div><input type="hidden" id="c-id">
+    <div class="form-grid two"><label><span>Name · Person oder Firma</span><input id="c-name" required placeholder="z. B. Iris oder TRESTO"></label><label><span>Funktion</span><input id="c-function" required placeholder="z. B. BK oder BHB"></label><label><span>Quartal</span><select id="c-quarter"></select></label><label><span>PT minimum</span><input id="c-min" type="number" min="0" step="0.5" required></label><label><span>PT maximum</span><input id="c-max" type="number" min="0" step="0.5" required></label></div>
+    <p class="input-note">Beispiel: Iris · BK · Q1 2027 · 4–6 PT. Keine weiteren Statusfelder, keine Behauptung über Dritte.</p>
+    <div class="dialog-actions"><button type="button" class="text-danger hidden" id="delete-capacity">Eintrag löschen</button><span></span><button class="button ghost" value="cancel">Abbrechen</button><button type="submit" class="button primary">Übernehmen</button></div>
+  </form></dialog>
+
+  <div class="toast" id="toast" role="status"></div><script type="module" src="app.js"></script>
 </body>
 </html>

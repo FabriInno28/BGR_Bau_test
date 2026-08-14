@@ -1,0 +1,12 @@
+{
+  "name": "bgr-portfolio-cockpit",
+  "version": "2.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build"
+  },
+  "devDependencies": {
+    "vite": "^7.1.1"
+  }
+}
