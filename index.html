@@ -8,33 +8,34 @@
   <meta name="description" content="Rollende Projekt-, Ressourcen- und Finanzplanung der Baugenossenschaft Reussbühl">
   <link rel="icon" href="bgr-mark.png">
   <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="v3.css">
 </head>
 <body>
   <header class="topbar">
     <a class="brand" href="#top" aria-label="BGR Portfolio Cockpit"><img src="bgr-logo.png" alt="BGR"><span>Portfolio Cockpit</span></a>
-    <nav aria-label="Schnellnavigation"><a href="#portfolio">Portfolio</a><a href="#ressourcen">Ressourcen</a><a href="#export">Übergabe</a></nav>
-    <div class="top-actions"><span class="master-pill"><i></i>Excel Mutter unverändert</span><button class="button ghost" id="undo" disabled>↶ Rückgängig</button><button class="button primary" id="new-project">+ Projekt</button></div>
+    <nav aria-label="Schnellnavigation"><a href="#portfolio">Portfolio</a><a href="#ressourcen">Ressourcen</a><a href="#finanzen">Geld</a><a href="#export">Übergabe</a></nav>
+    <div class="top-actions"><span class="master-pill"><i></i>Stand Mutterliste</span><button class="button ghost" id="undo" disabled>↶ Rückgängig</button><button class="button primary" id="new-project">+ Projekt</button></div>
   </header>
 
   <main id="top">
     <section class="hero shell">
-      <div class="hero-copy"><p class="eyebrow">BGR · rollende Bauplanung</p><h1>Einzelnes Projekt verstehen.<br><em>Das Ganze im Griff behalten.</em></h1><p>Eine gemeinsame Sicht auf Projekte, Phasen, Meilensteine, Menschen und Geld. Der Prototyp verändert die bestehende Excel-Datei nie. Er führt einen lokalen Arbeitsstand, der geprüft exportiert werden kann.</p></div>
-      <div class="hero-rule"><span>Planungsgrundsatz</span><strong>Menschen, Geld und Zeit werden vor dem nächsten Phasenentscheid gemeinsam geprüft.</strong><small>Projektphasen sind keine Planungshorizonte. In den nächsten 36 Monaten planen wir quartalsweise, danach jährlich.</small></div>
+      <div class="hero-copy"><p class="eyebrow">BGR · rollende Bauplanung</p><h1>Heute sauber abbilden.<br><em>Morgen verlässlich planen.</em></h1><p>Die Mutterliste zeigt den aktuellen Projektstand. Im Cockpit planen wir für jedes Projekt alle Phasen, die benötigten Menschen, die finanziellen Mittel und die entscheidenden Übergänge.</p></div>
+      <div class="hero-rule"><span>Verbindliche Planungslogik</span><strong>Kein Phasenstart ohne geklärte Verantwortung, personelle Kapazität, Geld und Termin.</strong><small>Die nächsten 36 Monate werden in Quartalen geplant. Geld wird nach Projektphase erfasst und in einer Jahressicht zusammengeführt.</small></div>
     </section>
 
-    <section class="shell pulse" aria-label="Portfolio Kennzahlen"><div class="pulse-title"><span>Portfolio heute</span><small id="data-state">Excel Ausgangsstand</small></div><div class="kpis" id="kpis"></div></section>
+    <section class="shell pulse" aria-label="Portfolio Kennzahlen"><div class="pulse-title"><span>Portfolio heute</span><small id="data-state">aktueller Stand Mutterliste</small></div><div class="kpis" id="kpis"></div></section>
 
     <section class="shell section" id="portfolio">
-      <div class="section-head"><div><p class="eyebrow">Gesamtsicht und Projektsicht</p><h2>Alle Projekte. Eine Zeitachse.</h2><p>Ein Projekt auswählen, ohne das Portfolio aus den Augen zu verlieren.</p></div><div class="head-actions"><button class="button ghost" id="expand-long">Jahre 4–10 einblenden</button><button class="button primary" id="edit-selected">Ausgewähltes Projekt bearbeiten</button></div></div>
+      <div class="section-head"><div><p class="eyebrow">Mutterstand und rollender Plan</p><h2>Alle Projekte. Alle Phasen.</h2><p>Der farbige Punkt zeigt den heutigen Stand. Farbige Balken entstehen erst, wenn eine Phase im Projekt geplant wurde.</p></div><div class="head-actions"><button class="button ghost" id="expand-long">Jahre 4 bis 10 einblenden</button><button class="button primary" id="edit-selected">Ausgewähltes Projekt planen</button></div></div>
       <div class="toolbar">
         <label class="search"><span>⌕</span><input id="search" type="search" placeholder="Objekt oder Massnahme suchen"></label>
         <label><span>Projektart</span><select id="kind-filter"><option value="all">Alle</option><option>Kleinprojekt</option><option>Bauprojekt</option></select></label>
-        <label><span>Projektphase</span><select id="phase-filter"><option value="all">Alle Phasen</option></select></label>
+        <label><span>Aktueller Stand</span><select id="phase-filter"><option value="all">Alle Phasen</option></select></label>
         <label class="toggle"><input id="only-pressure" type="checkbox"><span>Nur mit Klärungsbedarf</span></label>
       </div>
       <div class="portfolio-layout">
         <div class="timeline-card">
-          <div class="timeline-meta"><div><strong>Nächste 36 Monate</strong><span>12 Quartale · Erstvorschlag aus den vorhandenen Jahresdaten</span></div><div class="phase-legend" id="phase-legend"></div></div>
+          <div class="timeline-meta"><div><strong>Nächste 36 Monate</strong><span>12 Quartale · individuell je Projekt planbar</span></div><div class="phase-legend" id="phase-legend"></div></div>
           <div class="timeline-scroll"><div class="timeline" id="timeline"></div></div>
           <div class="long-horizon hidden" id="long-horizon"></div>
         </div>
@@ -43,44 +44,55 @@
     </section>
 
     <section class="band" id="ressourcen"><div class="shell section">
-      <div class="section-head compact"><div><p class="eyebrow">Menschen und Partner</p><h2>Bedarf trifft Verfügbarkeit.</h2><p>Dieselbe einfache Logik im Projekt und im Gesamtportfolio: Name, Funktion, Quartal, PT min. und PT max.</p></div><button class="button primary" id="new-capacity">+ Verfügbarkeit</button></div>
+      <div class="section-head compact"><div><p class="eyebrow">Menschen und Partner</p><h2>Bedarf trifft verbindliche Verfügbarkeit.</h2><p>Nur bestätigte Kapazitäten eintragen. Projektbedarf und Verfügbarkeit werden je Ressource und Quartal verglichen.</p></div><button class="button primary" id="new-capacity">+ Verfügbarkeit erfassen</button></div>
+      <div class="alert-strip hidden" id="resource-alert"></div>
       <div class="resource-layout">
-        <article class="resource-chart-card"><div class="card-head"><div><strong>Ressourcenlage nach Quartal</strong><span>Portfolio Bedarf gegen erfasste Verfügbarkeit</span></div><select id="resource-focus" aria-label="Ressource auswählen"></select></div><div class="resource-chart" id="resource-chart"></div></article>
-        <article class="capacity-card"><div class="card-head"><div><strong>Verfügbarkeit</strong><span id="capacity-count">0 Einträge</span></div><button class="text-button" id="export-capacity">CSV ↓</button></div><p class="capacity-hint">Iris und TRESTO sind mit den besprochenen Beispielwerten vorausgefüllt. Vor einer Bewertung bitte prüfen oder ersetzen.</p><div class="simple-table" id="capacity-list"></div></article>
+        <article class="resource-chart-card"><div class="card-head"><div><strong>Ressourcenlage nach Quartal</strong><span>Projektbedarf gegen verbindlich erfasste Verfügbarkeit</span></div><select id="resource-focus" aria-label="Ressource auswählen"></select></div><div class="resource-chart" id="resource-chart"></div></article>
+        <article class="capacity-card"><div class="card-head"><div><strong>Verfügbarkeit</strong><span id="capacity-count">noch keine Einträge</span></div><button class="text-button" id="export-capacity">CSV ↓</button></div><div class="capacity-principle"><strong>Verbindlich bedeutet:</strong><span>Die Person oder Firma hat diese Bandbreite für das Quartal bestätigt.</span></div><div class="simple-table" id="capacity-list"></div></article>
       </div>
-      <article class="matrix-card"><div class="card-head"><div><strong>Wer wird wann knapp?</strong><span>Nur Quartale mit Bedarf oder eingetragener Verfügbarkeit</span></div><div class="state-legend"><span><i class="ok"></i>tragbar</span><span><i class="watch"></i>prüfen</span><span><i class="gap"></i>Lücke</span><span><i class="open"></i>offen</span></div></div><div class="matrix-wrap" id="resource-matrix"></div></article>
+      <article class="matrix-card"><div class="card-head"><div><strong>Wo entsteht eine Überlastung?</strong><span>Bedarf oben, Verfügbarkeit unten. Namen werden eindeutig zusammengeführt.</span></div><div class="state-legend"><span><i class="ok"></i>tragbar</span><span><i class="watch"></i>mögliche Lücke</span><span><i class="gap"></i>sichere Lücke</span><span><i class="open"></i>Verfügbarkeit offen</span></div></div><div class="matrix-wrap" id="resource-matrix"></div></article>
     </div></section>
 
-    <section class="shell section finance-section">
-      <div class="section-head compact"><div><p class="eyebrow">Finanzielle Gesamtsicht</p><h2>Geld im selben Takt planen.</h2><p>Bekannte Jahreswerte aus Excel bleiben sichtbar. Quartalswerte können im Projekt präzisiert werden.</p></div></div>
-      <div class="finance-grid"><article class="finance-chart-card"><div class="card-head"><div><strong>Bekannte Projektkosten</strong><span>Jahreswerte aus Excel und lokaler Arbeitsstand</span></div></div><div id="finance-chart" class="finance-chart"></div></article><article class="gate-card"><span class="gate-number">2</span><div><strong>Grosse Entscheide</strong><p>Nach der Machbarkeitsstudie und nach der Planung. Dort wird der Gesamtvorstand einbezogen.</p><small>Machbarkeit: Kostengenauigkeit ±25 % · Projektfreigabe: ±10 %</small></div></article></div>
+    <section class="shell section finance-section" id="finanzen">
+      <div class="section-head compact"><div><p class="eyebrow">Geld nach Projektphasen</p><h2>Nur qualifizierte Kosten steuern.</h2><p>Ein Wert wird je Projektphase und Jahr erfasst. Schätzungen bleiben sichtbar. Freigegebene und gebundene Beträge werden separat ausgewiesen.</p></div></div>
+      <div class="finance-horizons" id="finance-horizons"></div>
+      <div class="finance-grid"><article class="finance-chart-card"><div class="card-head"><div><strong>Jahressicht Portfolio</strong><span>Schätzung, budgetiert, freigegeben und vertraglich gebunden</span></div></div><div id="finance-chart" class="finance-chart"></div><div class="finance-legend" id="finance-legend"></div></article><article class="gate-card"><span class="gate-number">2</span><div><strong>Grosse Entscheide</strong><p>Nach der Machbarkeitsstudie und nach der Planung wird der Gesamtvorstand einbezogen.</p><small>Machbarkeit: Kostengenauigkeit ±25 Prozent. Projektfreigabe: ±10 Prozent.</small></div></article></div>
     </section>
 
-    <section class="export-band" id="export"><div class="shell export-grid"><div><p class="eyebrow">Kontrollierte Übergabe</p><h2>Excel bleibt die Mutter.</h2><p>Der Prototyp speichert nur auf diesem Gerät. Exportiert werden lesbare CSV-Dateien für die bewusste Übernahme.</p></div><div class="export-actions"><button class="button light" id="export-projects">Projekte exportieren</button><button class="button light" id="export-resources">Ressourcen exportieren</button><button class="button light" id="export-changes">Änderungen exportieren</button><button class="button danger-light" id="reset-all">Arbeitsstand zurücksetzen</button></div></div></section>
+    <section class="export-band" id="export"><div class="shell export-grid"><div><p class="eyebrow">Kontrollierte Übergabe</p><h2>Die Mutterliste bleibt der aktuelle Stand.</h2><p>Die Planung wird lokal geführt und als strukturierte CSV Dateien exportiert. Erst nach Prüfung werden Daten bewusst in das Mutterdokument übernommen.</p></div><div class="export-actions"><button class="button light" id="export-projects">Projekte und Phasen</button><button class="button light" id="export-resources">Ressourcenbedarf</button><button class="button light" id="export-money">Geld nach Phase</button><button class="button light" id="export-changes">Änderungen</button><button class="button danger-light" id="reset-all">Planung zurücksetzen</button></div></div></section>
   </main>
 
   <dialog id="project-dialog" class="dialog wide"><form method="dialog" id="project-form">
-    <div class="dialog-head"><div><p class="eyebrow">Projekt bearbeiten</p><h2 id="project-dialog-title">Projekt</h2></div><button class="close" value="cancel" aria-label="Schliessen">×</button></div><input type="hidden" id="project-id">
-    <div class="dialog-tabs"><button type="button" class="active" data-form-tab="base">Grunddaten</button><button type="button" data-form-tab="roles">Rollen</button><button type="button" data-form-tab="resources">Ressourcen</button><button type="button" data-form-tab="milestones">Meilensteine</button></div>
+    <div class="dialog-head"><div><p class="eyebrow">Projekt planen</p><h2 id="project-dialog-title">Projekt</h2></div><button class="close" value="cancel" aria-label="Schliessen">×</button></div><input type="hidden" id="project-id">
+    <div class="dialog-tabs"><button type="button" class="active" data-form-tab="base">Grunddaten</button><button type="button" data-form-tab="phases">Phasenplan</button><button type="button" data-form-tab="roles">Rollen</button><button type="button" data-form-tab="resources">Ressourcen</button><button type="button" data-form-tab="money">Geld</button><button type="button" data-form-tab="milestones">Meilensteine</button></div>
+
     <div class="form-panel" data-panel="base">
+      <div class="mother-box"><span>Aktueller Stand Mutterliste</span><strong id="mother-state">offen</strong><small>Dieser Wert beschreibt den heutigen Stand. Die zukünftigen Phasen werden separat geplant.</small></div>
       <div class="form-grid two"><label><span>Objekt</span><input id="f-object" required></label><label><span>Projektart</span><select id="f-kind"><option>Kleinprojekt</option><option>Bauprojekt</option></select></label></div>
       <label><span>Massnahme</span><textarea id="f-measure" required></textarea></label>
       <div class="definition-note"><strong>Kleinprojekt</strong><span>Ohne externen Planer, Architekten oder vergleichbare Fachplanung und innerhalb des bewilligten Projektrahmens. Die genaue Grenze wird später im Handbuch festgelegt.</span></div>
-      <div class="form-grid three"><label><span>Projektphase</span><select id="f-phase"></select></label><label><span>Start</span><select id="f-start"></select></label><label><span>Ende</span><select id="f-end"></select></label></div>
-      <div class="form-grid three"><label><span>Gesamtkosten CHF</span><input id="f-cost" inputmode="decimal"></label><label><span>Kostengenauigkeit</span><select id="f-accuracy"><option>offen</option><option>Erste Schätzung</option><option>±25 %</option><option>±10 %</option></select></label><label><span>Bereits freigegeben</span><select id="f-approved"><option value="no">nein</option><option value="yes">ja</option></select></label></div>
-      <label><span>Nächster Entscheid oder Klärungspunkt</span><textarea id="f-next"></textarea></label>
+      <div class="form-grid two"><label><span>Aktuelle Projektphase im Arbeitsstand</span><select id="f-phase"></select></label><label><span>Nächster Entscheid oder Klärungspunkt</span><textarea id="f-next"></textarea></label></div>
     </div>
-    <div class="form-panel hidden" data-panel="roles"><p class="panel-intro">Die Funktion ist entscheidend. Nicht die Nähe zur BGR. Bauherrenbegleitung wird separat mandatiert und beginnt spätestens mit der Machbarkeitsstudie.</p><div class="form-grid two"><label><span>Mitglied Geschäftsstelle</span><input id="f-gs" placeholder="Name oder offen"></label><label><span>Mitglied Baukommission</span><input id="f-bk" placeholder="Name oder offen"></label><label><span>Mitglied Vorstand, Gesamtsicht</span><input id="f-vs" placeholder="nach Bedarf oder offen"></label><label><span>Bauherrenbegleitung</span><input id="f-bhb" placeholder="z. B. TRESTO, Büro 8"></label><label><span>Unabhängige Kontrolle</span><input id="f-control" placeholder="Name/Firma oder offen"></label><label><span>Stellvertretung</span><input id="f-deputy" placeholder="Name/Firma oder offen"></label></div></div>
-    <div class="form-panel hidden" data-panel="resources"><div class="repeat-head"><div><strong>Bedarf dieses Projekts</strong><span>Eine Zeile pro Ressource und Quartal.</span></div><button type="button" class="button ghost" id="add-demand">+ Bedarf</button></div><div class="edit-table" id="demand-editor"></div><div class="repeat-head money-head"><div><strong>Geld pro Quartal</strong><span>Optional präzisieren. Jahreswerte aus Excel bleiben erhalten.</span></div><button type="button" class="button ghost" id="add-finance">+ Quartalsbetrag</button></div><div class="edit-table" id="finance-editor"></div></div>
-    <div class="form-panel hidden" data-panel="milestones"><p class="panel-intro">Die Meilensteine folgen dem BGR Normprozess. Die beiden grossen Übergänge sind hervorgehoben und benötigen den Gesamtvorstand.</p><div class="milestone-editor" id="milestone-editor"></div></div>
-    <div class="dialog-actions"><button type="button" class="text-danger" id="delete-project">Projekt löschen</button><span></span><button class="button ghost" value="cancel">Abbrechen</button><button type="submit" class="button primary" value="default">Arbeitsstand speichern</button></div>
+
+    <div class="form-panel hidden" data-panel="phases"><p class="panel-intro">Alle sieben Phasen sind vorhanden. Erst ein Start und ein Ende machen aus einer offenen Phase eine zeitliche Planung. Die Reihenfolge wird geprüft.</p><div class="phase-plan-editor" id="phase-plan-editor"></div></div>
+
+    <div class="form-panel hidden" data-panel="roles"><p class="panel-intro">Die Funktion ist entscheidend. Die Bauherrenbegleitung wird separat mandatiert und ist spätestens ab Machbarkeitsstudie dabei.</p><div class="form-grid two"><label><span>Mitglied Geschäftsstelle</span><input id="f-gs" placeholder="Name oder offen"></label><label><span>Mitglied Baukommission</span><input id="f-bk" placeholder="Name oder offen"></label><label><span>Mitglied Vorstand, Gesamtsicht</span><input id="f-vs" placeholder="nach Bedarf oder offen"></label><label><span>Bauherrenbegleitung</span><input id="f-bhb" placeholder="z. B. TRESTO oder Büro 8"></label><label><span>Unabhängige Kontrolle</span><input id="f-control" placeholder="Name oder Firma"></label><label><span>Stellvertretung</span><input id="f-deputy" placeholder="Name oder Firma"></label></div></div>
+
+    <div class="form-panel hidden" data-panel="resources"><div class="repeat-head"><div><strong>Bedarf dieses Projekts</strong><span>Name, Funktion, Projektphase, Quartal und Bandbreite in Personentagen.</span></div><button type="button" class="button ghost" id="add-demand">+ Ressourcenbedarf</button></div><div class="edit-table" id="demand-editor"></div><p class="input-note">Gleiche Personen und Firmen werden unabhängig von Gross und Kleinschreibung zusammengeführt. «Tresto» und «TRESTO» sind damit dieselbe Ressource.</p></div>
+
+    <div class="form-panel hidden" data-panel="money"><div class="mother-cost-note" id="mother-cost-note"></div><div class="repeat-head"><div><strong>Kosten nach Phase und Jahr</strong><span>Jeder Betrag erhält eine Qualität. Nur freigegebene und gebundene Werte gelten als gesichert.</span></div><button type="button" class="button ghost" id="add-phase-cost">+ Phasenkosten</button></div><div class="edit-table" id="phase-cost-editor"></div></div>
+
+    <div class="form-panel hidden" data-panel="milestones"><p class="panel-intro">Die Meilensteine folgen dem Normprozess. Die zwei grossen Entscheide benötigen den Gesamtvorstand. Termine können unabhängig vom Phasenplan präzisiert werden.</p><div class="milestone-editor" id="milestone-editor"></div></div>
+
+    <div class="dialog-actions"><button type="button" class="text-danger" id="delete-project">Projekt löschen</button><span></span><button class="button ghost" value="cancel">Abbrechen</button><button type="submit" class="button primary" value="default">Planung speichern</button></div>
   </form></dialog>
 
   <dialog id="capacity-dialog" class="dialog"><form method="dialog" id="capacity-form">
-    <div class="dialog-head"><div><p class="eyebrow">Verfügbarkeit</p><h2>Kapazität erfassen</h2></div><button class="close" value="cancel" aria-label="Schliessen">×</button></div><input type="hidden" id="c-id">
-    <div class="form-grid two"><label><span>Name · Person oder Firma</span><input id="c-name" required placeholder="z. B. Iris oder TRESTO"></label><label><span>Funktion</span><input id="c-function" required placeholder="z. B. BK oder BHB"></label><label><span>Quartal</span><select id="c-quarter"></select></label><label><span>PT minimum</span><input id="c-min" type="number" min="0" step="0.5" required></label><label><span>PT maximum</span><input id="c-max" type="number" min="0" step="0.5" required></label></div>
-    <p class="input-note">Beispiel: Iris · BK · Q1 2027 · 4–6 PT. Keine weiteren Statusfelder, keine Behauptung über Dritte.</p>
-    <div class="dialog-actions"><button type="button" class="text-danger hidden" id="delete-capacity">Eintrag löschen</button><span></span><button class="button ghost" value="cancel">Abbrechen</button><button type="submit" class="button primary">Übernehmen</button></div>
+    <div class="dialog-head"><div><p class="eyebrow">Verbindliche Verfügbarkeit</p><h2>Kapazität erfassen</h2></div><button class="close" value="cancel" aria-label="Schliessen">×</button></div><input type="hidden" id="c-id">
+    <div class="form-grid two"><label><span>Name der Person oder Firma</span><input id="c-name" required placeholder="z. B. Iris oder TRESTO"></label><label><span>Funktion</span><input id="c-function" required placeholder="z. B. BK oder BHB"></label><label><span>Quartal</span><select id="c-quarter"></select></label><label><span>PT Minimum</span><input id="c-min" type="number" min="0" step="0.5" required></label><label><span>PT Maximum</span><input id="c-max" type="number" min="0" step="0.5" required></label></div>
+    <label class="confirm-field"><input id="c-confirmed" type="checkbox" required><span>Diese Verfügbarkeit wurde mit der Person oder Firma geklärt und kann verbindlich verwendet werden.</span></label>
+    <p class="input-note">Nicht bestätigte Annahmen gehören nicht in diese Maske. Sie werden stattdessen als offene Hausaufgabe geführt.</p>
+    <div class="dialog-actions"><button type="button" class="text-danger hidden" id="delete-capacity">Eintrag löschen</button><span></span><button class="button ghost" value="cancel">Abbrechen</button><button type="submit" class="button primary">Verbindlich übernehmen</button></div>
   </form></dialog>
 
   <div class="toast" id="toast" role="status"></div><script type="module" src="app.js"></script>

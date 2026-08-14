@@ -1,25 +1,21 @@
-# BGR Portfolio Cockpit · Prototyp V2
+# BGR Portfolio Cockpit · verbindlicher Planungsprototyp
 
-Ein lokales, fragegeführtes Planungswerkzeug für das Bauportfolio der Baugenossenschaft Reussbühl.
+Das Cockpit verbindet den aktuellen Stand der BGR Mutterliste mit einer rollenden Projekt-, Ressourcen- und Finanzplanung.
 
-## Zweck
+## Grundlogik
 
-Das Cockpit macht gleichzeitig sichtbar:
+Die Mutterliste zeigt, wo ein Projekt heute steht. Sie wird durch das Cockpit nicht verändert.
 
-- welches einzelne Projekt in welcher Projektphase steht,
-- welche Meilensteine und Entscheide als Nächstes anstehen,
-- welche Menschen, Firmen und Funktionen pro Quartal benötigt werden,
-- welche Personentage pro Quartal verfügbar sind,
-- wo Bedarf und Verfügbarkeit nicht zusammenpassen,
-- welche finanziellen Belastungen bereits bekannt sind,
-- welche lokalen Änderungen später kontrolliert nach Excel übernommen werden können.
+Im Cockpit werden je Projekt separat geplant:
 
-Die bestehende Excel-Datei ist die unveränderte Mutter. Die Website schreibt nie in diese Datei. Der Arbeitsstand wird ausschliesslich im Browser des verwendeten Geräts gespeichert.
+- alle sieben Projektphasen
+- Start und Ende jeder Phase in Quartalen
+- Rollen und Bauherrenbegleitung
+- Ressourcenbedarf je Person oder Firma, Funktion, Projektphase und Quartal
+- Kosten je Projektphase und Jahr
+- Meilensteine und Entscheide
 
-## Projektarten
-
-- **Kleinprojekt:** ohne externen Planer, Architekten oder eine vergleichbare Fachplanung und innerhalb des bewilligten Projektrahmens. Die genaue Abgrenzung wird später im BGR Handbuch festgelegt.
-- **Bauprojekt:** alle übrigen relevanten Bauvorhaben.
+Der lokale Arbeitsstand kann geprüft und als CSV exportiert werden.
 
 ## Projektphasen
 
@@ -31,28 +27,64 @@ Die bestehende Excel-Datei ist die unveränderte Mutter. Die Website schreibt ni
 6. Realisierung
 7. Abschluss / Übergabe
 
-Die Farben der sieben Phasen sind im gesamten Cockpit identisch. Die beiden grossen Entscheide sind nach der Machbarkeitsstudie und nach der Planung markiert. Sie beziehen den Gesamtvorstand ein. Die Kostengenauigkeit beträgt dort grundsätzlich ±25 Prozent beziehungsweise ±10 Prozent.
+Alle Phasen haben im gesamten Cockpit dieselbe Farbe. Die beiden grossen Entscheide nach der Machbarkeitsstudie und nach der Planung beziehen den Gesamtvorstand ein.
 
-## Ressourcenlogik
+## Verbindliche Ressourcenplanung
 
-Für Projektbedarf und Verfügbarkeit wird dieselbe einfache Zeile verwendet:
+Der Projektbedarf wird so erfasst:
 
-`Name | Funktion | Quartal | PT minimum | PT maximum`
+`Name | Funktion | Projektphase | Quartal | PT Minimum | PT Maximum`
 
-Beispiel: `Iris | BK | Q1 2027 | 4 | 6`
+Die Verfügbarkeit wird separat und verbindlich erfasst:
 
-Die Gesamtsicht summiert die Projektbedarfe je Name und Quartal und vergleicht sie mit der erfassten Verfügbarkeit. So werden Lücken, Überschneidungen und noch offene Angaben sichtbar.
+`Name | Funktion | Quartal | PT Minimum | PT Maximum | bestätigt`
+
+Nur mit der Person oder Firma geklärte Kapazitäten gehören in die Verfügbarkeitsmaske.
+
+Namen werden technisch vereinheitlicht. `Tresto` und `TRESTO` gelten als dieselbe Ressource.
+
+Die Bewertung lautet:
+
+- **tragbar:** maximaler Bedarf ist durch die minimale Verfügbarkeit gedeckt
+- **mögliche Lücke:** die beiden Bandbreiten überschneiden sich
+- **sichere Lücke:** minimaler Bedarf liegt über der maximalen Verfügbarkeit
+- **offen:** Bedarf ist vorhanden, aber keine verbindliche Verfügbarkeit erfasst
+
+Beispiel: Bedarf 25 bis 30 PT und Verfügbarkeit 15 bis 20 PT ergibt eine sichere Lücke von mindestens 5 und höchstens 15 PT.
+
+## Finanzplanung
+
+Kosten werden nicht mehr als «bekannt» bezeichnet. Jeder Betrag wird einer Projektphase, einem Jahr und einer Qualität zugeordnet:
+
+- Schätzung
+- budgetiert
+- freigegeben
+- vertraglich gebunden
+
+Nur freigegebene und vertraglich gebundene Beträge werden in der gesicherten Sicht zusammengezählt.
+
+Die Jahressicht wird zusätzlich in drei Planungshorizonte verdichtet:
+
+- 0 bis 1 Jahr
+- 2 bis 3 Jahre
+- 4 bis 10 Jahre
+
+Bestehende Beträge aus der Mutterliste bleiben als Hinweis sichtbar. Solange sie keiner Projektphase, keinem Jahr und keiner Qualität zugeordnet sind, werden sie nicht als gesichert gewertet.
+
+## Projektarten
+
+- **Kleinprojekt:** ohne externen Planer, Architekten oder vergleichbare Fachplanung und innerhalb des bewilligten Projektrahmens. Die genaue Abgrenzung wird später im BGR Handbuch festgelegt.
+- **Bauprojekt:** alle übrigen relevanten Bauvorhaben.
 
 ## Bedienung
 
-1. Ein Projekt in der Zeitachse auswählen.
-2. Rechts die Projektsicht prüfen.
-3. Mit **Projekt öffnen** Grunddaten, Rollen, Ressourcen und Meilensteine bearbeiten.
-4. Unter **Verfügbarkeit** die Quartalswerte von Personen und Firmen erfassen.
-5. Die Ressourcenmatrix und die Finanzsicht prüfen.
-6. Geprüfte Daten über die CSV-Schaltflächen exportieren und bewusst in Excel übernehmen.
-
-Ein Projekt kann im lokalen Arbeitsstand gelöscht werden. Mit **Rückgängig**, dem projektspezifischen Wiederherstellen oder **Arbeitsstand zurücksetzen** kann jederzeit auf den Excel Ausgangsstand zurückgekehrt werden.
+1. Projekt in der Gesamtsicht auswählen.
+2. **Projekt planen** öffnen.
+3. Alle relevanten Projektphasen terminieren.
+4. Rollen, Ressourcenbedarf, Kosten und Meilensteine erfassen.
+5. Verbindliche Verfügbarkeit der Personen und Firmen ergänzen.
+6. Ressourcenwarnungen und finanzielle Jahressicht prüfen.
+7. Geprüfte Daten als CSV exportieren.
 
 ## Lokal starten
 
@@ -61,26 +93,21 @@ npm install
 npm run dev
 ```
 
-Danach die angezeigte lokale Adresse im Browser öffnen.
-
-## GitHub Pages
-
-Die statischen Dateien können direkt aus dem Projektroot veröffentlicht werden. Für einen Build:
+## Produktionsbuild
 
 ```bash
 npm install
 npm run build
 ```
 
-Das Ergebnis liegt in `dist/`.
+Das fertige Ergebnis liegt in `dist/` und kann auch für GitHub Pages verwendet werden.
 
-## Datensicherheit des Prototyps
+## Grenzen des Prototyps
 
 - keine Anmeldung
-- kein Server und keine Datenbank
-- keine automatische Synchronisation
-- lokale Speicherung im Browser
-- Excel bleibt unverändert
-- CSV Export zur kontrollierten Übernahme
+- keine Mehrbenutzerbearbeitung
+- keine zentrale Datenbank
+- Speicherung im Browser des verwendeten Geräts
+- keine automatische Veränderung der Excel Mutterliste
 
-Für einen späteren Mehrbenutzerbetrieb braucht es ein bewusstes Betriebs-, Berechtigungs- und Sicherungskonzept.
+Für einen späteren gemeinsamen Betrieb braucht es ein Berechtigungs-, Sicherungs- und Datenverantwortungskonzept.
