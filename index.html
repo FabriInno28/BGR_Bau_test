@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#184f4a">
-  <title>BGR Portfolio Cockpit</title>
+  <title>BGR BauRadar</title>
   <meta name="description" content="Rollende Projekt-, Ressourcen- und Finanzplanung der Baugenossenschaft Reussbühl">
   <link rel="icon" href="bgr-mark.png">
   <link rel="stylesheet" href="style.css">
@@ -12,14 +12,14 @@
 </head>
 <body>
   <header class="topbar">
-    <a class="brand" href="#top" aria-label="BGR Portfolio Cockpit"><img src="bgr-logo.png" alt="BGR"><span>Portfolio Cockpit</span></a>
+    <a class="brand" href="#top" aria-label="BGR BauRadar"><img src="bgr-logo.png" alt="BGR"><span>BauRadar</span></a>
     <nav aria-label="Schnellnavigation"><a href="#portfolio">Portfolio</a><a href="#ressourcen">Ressourcen</a><a href="#finanzen">Geld</a><a href="#export">Übergabe</a></nav>
     <div class="top-actions"><span class="master-pill"><i></i>Stand Mutterliste</span><button class="button ghost" id="undo" disabled>↶ Rückgängig</button><button class="button primary" id="new-project">+ Projekt</button></div>
   </header>
 
   <main id="top">
     <section class="hero shell">
-      <div class="hero-copy"><p class="eyebrow">BGR · rollende Bauplanung</p><h1>Heute sauber abbilden.<br><em>Morgen verlässlich planen.</em></h1><p>Die Mutterliste zeigt den aktuellen Projektstand. Im Cockpit planen wir für jedes Projekt alle Phasen, die benötigten Menschen, die finanziellen Mittel und die entscheidenden Übergänge.</p></div>
+      <div class="hero-copy"><p class="eyebrow">BGR BauRadar · rollende Bauplanung</p><h1>Heute sauber abbilden.<br><em>Morgen verlässlich planen.</em></h1><p>Die Mutterliste zeigt den aktuellen Projektstand. Im BauRadar planen wir für jedes Projekt alle Phasen, die benötigten Menschen, die finanziellen Mittel und die entscheidenden Übergänge.</p></div>
       <div class="hero-rule"><span>Verbindliche Planungslogik</span><strong>Kein Phasenstart ohne geklärte Verantwortung, personelle Kapazität, Geld und Termin.</strong><small>Die nächsten 36 Monate werden in Quartalen geplant. Geld wird nach Projektphase erfasst und in einer Jahressicht zusammengeführt.</small></div>
     </section>
 
@@ -71,14 +71,15 @@
       <div class="form-grid two"><label><span>Objekt</span><input id="f-object" required></label><label><span>Projektart</span><select id="f-kind"><option>Kleinprojekt</option><option>Bauprojekt</option></select></label></div>
       <label><span>Massnahme</span><textarea id="f-measure" required></textarea></label>
       <div class="definition-note"><strong>Kleinprojekt</strong><span>Ohne externen Planer, Architekten oder vergleichbare Fachplanung und innerhalb des bewilligten Projektrahmens. Die genaue Grenze wird später im Handbuch festgelegt.</span></div>
-      <div class="form-grid two"><label><span>Aktuelle Projektphase im Arbeitsstand</span><select id="f-phase"></select></label><label><span>Nächster Entscheid oder Klärungspunkt</span><textarea id="f-next"></textarea></label></div>
+      <div class="form-grid two"><label><span>Aktuelle Projektphase im Arbeitsstand</span><select id="f-phase"></select></label><label><span>Verantwortung aktuelle Phase</span><select id="f-current-assignee" required></select></label></div>
+      <label><span>Nächster Entscheid oder Klärungspunkt</span><textarea id="f-next"></textarea></label>
     </div>
 
     <div class="form-panel hidden" data-panel="phases"><p class="panel-intro">Alle sieben Phasen sind vorhanden. Erst ein Start und ein Ende machen aus einer offenen Phase eine zeitliche Planung. Die Reihenfolge wird geprüft.</p><div class="phase-plan-editor" id="phase-plan-editor"></div></div>
 
-    <div class="form-panel hidden" data-panel="roles"><p class="panel-intro">Die Funktion ist entscheidend. Die Bauherrenbegleitung wird separat mandatiert und ist spätestens ab Machbarkeitsstudie dabei.</p><div class="form-grid two"><label><span>Mitglied Geschäftsstelle</span><input id="f-gs" placeholder="Name oder offen"></label><label><span>Mitglied Baukommission</span><input id="f-bk" placeholder="Name oder offen"></label><label><span>Mitglied Vorstand, Gesamtsicht</span><input id="f-vs" placeholder="nach Bedarf oder offen"></label><label><span>Bauherrenbegleitung</span><input id="f-bhb" placeholder="z. B. TRESTO oder Büro 8"></label><label><span>Unabhängige Kontrolle</span><input id="f-control" placeholder="Name oder Firma"></label><label><span>Stellvertretung</span><input id="f-deputy" placeholder="Name oder Firma"></label></div></div>
+    <div class="form-panel hidden" data-panel="roles"><p class="panel-intro">Die Funktion ist entscheidend. Namen und Partner werden aus einer einheitlichen Liste gewählt. Die Bauherrenbegleitung wird separat mandatiert und ist spätestens ab Machbarkeitsstudie dabei.</p><div class="form-grid two"><label><span>Mitglied Geschäftsstelle</span><select id="f-gs"></select></label><label><span>Mitglied Baukommission</span><select id="f-bk"></select></label><label><span>Mitglied Vorstand, Gesamtsicht</span><select id="f-vs"></select></label><label><span>Bauherrenbegleitung</span><select id="f-bhb"></select></label><label><span>Unabhängige Kontrolle</span><select id="f-control"></select></label><label><span>Stellvertretung</span><select id="f-deputy"></select></label></div></div>
 
-    <div class="form-panel hidden" data-panel="resources"><div class="repeat-head"><div><strong>Bedarf dieses Projekts</strong><span>Name, Funktion, Projektphase, Quartal und Bandbreite in Personentagen.</span></div><button type="button" class="button ghost" id="add-demand">+ Ressourcenbedarf</button></div><div class="edit-table" id="demand-editor"></div><p class="input-note">Gleiche Personen und Firmen werden unabhängig von Gross und Kleinschreibung zusammengeführt. «Tresto» und «TRESTO» sind damit dieselbe Ressource.</p></div>
+    <div class="form-panel hidden" data-panel="resources"><div class="repeat-head"><div><strong>Bedarf dieses Projekts</strong><span>Ressource, Funktion, Projektphase, Quartal und Bandbreite in Personentagen.</span></div><button type="button" class="button ghost" id="add-demand">+ Ressourcenbedarf</button></div><div class="edit-table" id="demand-editor"></div><p class="input-note">Ressourcen werden aus einer verbindlichen Liste gewählt. Dadurch erscheinen Bedarf und Verfügbarkeit immer unter demselben Namen.</p></div>
 
     <div class="form-panel hidden" data-panel="money"><div class="mother-cost-note" id="mother-cost-note"></div><div class="repeat-head"><div><strong>Kosten nach Phase und Jahr</strong><span>Jeder Betrag erhält eine Qualität. Nur freigegebene und gebundene Werte gelten als gesichert.</span></div><button type="button" class="button ghost" id="add-phase-cost">+ Phasenkosten</button></div><div class="edit-table" id="phase-cost-editor"></div></div>
 
@@ -89,7 +90,7 @@
 
   <dialog id="capacity-dialog" class="dialog"><form method="dialog" id="capacity-form">
     <div class="dialog-head"><div><p class="eyebrow">Verbindliche Verfügbarkeit</p><h2>Kapazität erfassen</h2></div><button class="close" value="cancel" aria-label="Schliessen">×</button></div><input type="hidden" id="c-id">
-    <div class="form-grid two"><label><span>Name der Person oder Firma</span><input id="c-name" required placeholder="z. B. Iris oder TRESTO"></label><label><span>Funktion</span><input id="c-function" required placeholder="z. B. BK oder BHB"></label><label><span>Quartal</span><select id="c-quarter"></select></label><label><span>PT Minimum</span><input id="c-min" type="number" min="0" step="0.5" required></label><label><span>PT Maximum</span><input id="c-max" type="number" min="0" step="0.5" required></label></div>
+    <div class="form-grid two"><label><span>Person, Gremium oder Firma</span><select id="c-name" required></select></label><label><span>Funktion</span><input id="c-function" required placeholder="z. B. BK oder BHB"></label><label><span>Quartal</span><select id="c-quarter"></select></label><label><span>PT Minimum</span><input id="c-min" type="number" min="0" step="0.5" required></label><label><span>PT Maximum</span><input id="c-max" type="number" min="0" step="0.5" required></label></div>
     <label class="confirm-field"><input id="c-confirmed" type="checkbox" required><span>Diese Verfügbarkeit wurde mit der Person oder Firma geklärt und kann verbindlich verwendet werden.</span></label>
     <p class="input-note">Nicht bestätigte Annahmen gehören nicht in diese Maske. Sie werden stattdessen als offene Hausaufgabe geführt.</p>
     <div class="dialog-actions"><button type="button" class="text-danger hidden" id="delete-capacity">Eintrag löschen</button><span></span><button class="button ghost" value="cancel">Abbrechen</button><button type="submit" class="button primary">Verbindlich übernehmen</button></div>

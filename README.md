@@ -1,16 +1,17 @@
-# BGR Portfolio Cockpit · verbindlicher Planungsprototyp
+# BGR BauRadar · verbindlicher Planungsprototyp
 
-Das Cockpit verbindet den aktuellen Stand der BGR Mutterliste mit einer rollenden Projekt-, Ressourcen- und Finanzplanung.
+Das BGR BauRadar verbindet den aktuellen Stand der BGR Mutterliste mit einer rollenden Projekt-, Ressourcen- und Finanzplanung.
 
 ## Grundlogik
 
-Die Mutterliste zeigt, wo ein Projekt heute steht. Sie wird durch das Cockpit nicht verändert.
+Die Mutterliste zeigt, wo ein Projekt heute steht. Sie wird durch das BauRadar nicht verändert.
 
-Im Cockpit werden je Projekt separat geplant:
+Im BauRadar werden je Projekt separat geplant:
 
 - alle sieben Projektphasen
 - Start und Ende jeder Phase in Quartalen
 - Rollen und Bauherrenbegleitung
+- eindeutige Verantwortung für die aktuelle Phase
 - Ressourcenbedarf je Person oder Firma, Funktion, Projektphase und Quartal
 - Kosten je Projektphase und Jahr
 - Meilensteine und Entscheide
@@ -27,7 +28,7 @@ Der lokale Arbeitsstand kann geprüft und als CSV exportiert werden.
 6. Realisierung
 7. Abschluss / Übergabe
 
-Alle Phasen haben im gesamten Cockpit dieselbe Farbe. Die beiden grossen Entscheide nach der Machbarkeitsstudie und nach der Planung beziehen den Gesamtvorstand ein.
+Alle Phasen haben im gesamten BauRadar dieselbe Farbe. Die beiden grossen Entscheide nach der Machbarkeitsstudie und nach der Planung beziehen den Gesamtvorstand ein.
 
 ## Verbindliche Ressourcenplanung
 
@@ -41,7 +42,7 @@ Die Verfügbarkeit wird separat und verbindlich erfasst:
 
 Nur mit der Person oder Firma geklärte Kapazitäten gehören in die Verfügbarkeitsmaske.
 
-Namen werden technisch vereinheitlicht. `Tresto` und `TRESTO` gelten als dieselbe Ressource.
+Personen, Gremien und Firmen werden aus einer festen Liste gewählt: `Iris`, `Alex`, `Fabri`, `TRESTO`, `Büro 8`, `BK`, `BHB` und `externer Partner`. Dadurch werden Bedarf und Verfügbarkeit zuverlässig unter derselben Ressource zusammengeführt.
 
 Die Bewertung lautet:
 
