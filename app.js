@@ -1,161 +1,1017 @@
-import {BASELINE_PROJECTS} from "./projects-data.js";
+import { BASELINE_PROJECTS } from "./projects-data.js";
+import {
+  CAPACITY_RESOURCES,
+  ROLE_OPTIONS,
+  SCHEMA_VERSION,
+  allocationTotals,
+  canonicalResourceName,
+  clone,
+  csvSafe,
+  demandPlanningState,
+  migrateState,
+  monthInsidePhase,
+  monthToQuarter,
+  numberValue,
+  quarterIndex,
+  resourceGap,
+  resourceKey,
+  resourceState,
+  uuid,
+  validateDemand
+} from "./model.js";
 
 const PHASES = [
-  {key:"anlass",label:"Anlass / Prüfauftrag",short:"Anlass",className:"p1"},
-  {key:"machbarkeit",label:"Machbarkeitsstudie",short:"MBS",className:"p2"},
-  {key:"planerwahl",label:"Planerauswahl",short:"Planer",className:"p3"},
-  {key:"planung",label:"Planung / Projektierung",short:"Planung",className:"p4"},
-  {key:"vergabe",label:"Ausschreibung / Vergabe",short:"Vergabe",className:"p5"},
-  {key:"realisierung",label:"Realisierung",short:"Bau",className:"p6"},
-  {key:"abschluss",label:"Abschluss / Übergabe",short:"Abschluss",className:"p7"}
+  { key: "anlass", label: "Anlass / Prüfauftrag", short: "Anlass", className: "p1" },
+  { key: "machbarkeit", label: "Machbarkeitsstudie", short: "MBS", className: "p2" },
+  { key: "planerwahl", label: "Planerauswahl", short: "Planer", className: "p3" },
+  { key: "planung", label: "Planung / Projektierung", short: "Planung", className: "p4" },
+  { key: "vergabe", label: "Ausschreibung / Vergabe", short: "Vergabe", className: "p5" },
+  { key: "realisierung", label: "Realisierung", short: "Bau", className: "p6" },
+  { key: "abschluss", label: "Abschluss / Übergabe", short: "Abschluss", className: "p7" }
 ];
+
 const COST_STATUSES = [
-  {key:"estimate",label:"Schätzung",className:"estimate"},
-  {key:"budgeted",label:"budgetiert",className:"budgeted"},
-  {key:"approved",label:"freigegeben",className:"approved"},
-  {key:"bound",label:"vertraglich gebunden",className:"bound"}
+  { key: "estimate", label: "Schätzung", className: "estimate" },
+  { key: "budgeted", label: "budgetiert", className: "budgeted" },
+  { key: "approved", label: "freigegeben", className: "approved" },
+  { key: "bound", label: "vertraglich gebunden", className: "bound" }
 ];
-const RESOURCE_OPTIONS = ["Iris","Alex","Fabri","TRESTO","Büro 8","BK","BHB","externer Partner"];
-const NORM_MILESTONES = [
-  {key:"auftrag",name:"Prüfauftrag erteilt",phaseKey:"anlass",owner:"Baukommission"},
-  {key:"bhb",name:"Bauherrenbegleitung mandatiert",phaseKey:"machbarkeit",owner:"Baukommission"},
-  {key:"mbs",name:"Machbarkeitsstudie abgeschlossen",phaseKey:"machbarkeit",owner:"Baukommission"},
-  {key:"gate1",name:"Variante und Planung freigegeben",phaseKey:"machbarkeit",owner:"Gesamtvorstand",major:true},
-  {key:"planer",name:"Planer ausgewählt",phaseKey:"planerwahl",owner:"Baukommission"},
-  {key:"planung",name:"Planung abgeschlossen",phaseKey:"planung",owner:"Baukommission"},
-  {key:"gate2",name:"Projekt nach Planung freigegeben",phaseKey:"planung",owner:"Gesamtvorstand",major:true},
-  {key:"ausschreibung",name:"Ausschreibung abgeschlossen",phaseKey:"vergabe",owner:"Baukommission"},
-  {key:"vergabe",name:"Vergabe erfolgt",phaseKey:"vergabe",owner:"Baukommission"},
-  {key:"baustart",name:"Baustart",phaseKey:"realisierung",owner:"Baukommission"},
-  {key:"abnahme",name:"Abnahme",phaseKey:"abschluss",owner:"Baukommission"},
-  {key:"uebergabe",name:"Übergabe und Abschluss",phaseKey:"abschluss",owner:"Baukommission"}
-];
+
+const GATE_STATUSES = ["freigegeben", "mit Auflagen", "zurückgestellt", "gestoppt"];
+const GATE_AUTHORITIES = ["BK", "BHB", "Gesamtvorstand", "Geschäftsstelle"];
 const START_QUARTER = "2026-Q3";
-const DISPLAY_QUARTERS = makeQuarters(START_QUARTER,12);
-const ALL_QUARTERS = makeQuarters("2026-Q1",44);
-const YEARS = Array.from({length:11},(_,i)=>2026+i);
-const STORE_KEY = "bgr-portfolio-cockpit-v3";
-const HISTORY_KEY = "bgr-portfolio-cockpit-v3-history";
+const DISPLAY_QUARTERS = makeQuarters(START_QUARTER, 12);
+const ALL_QUARTERS = makeQuarters("2026-Q1", 44);
+const YEARS = Array.from({ length: 11 }, (_, index) => 2026 + index);
+const STORE_KEY = "bgr-bauradar-v4";
+const LEGACY_STORE_KEY = "bgr-portfolio-cockpit-v3";
+const HISTORY_KEY = "bgr-bauradar-v4-history";
 
 const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
-const clone = value => JSON.parse(JSON.stringify(value));
-const esc = value => String(value ?? "").replace(/[&<>'"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"}[c]));
-const num = value => {const n=Number(String(value??"").replace(/[’'\s]/g,"").replace(",","."));return Number.isFinite(n)?n:0};
-const chf = (value,short=false) => {const n=num(value);if(!n)return "CHF 0";if(short&&Math.abs(n)>=1e6)return `CHF ${(n/1e6).toLocaleString("de-CH",{maximumFractionDigits:1})} Mio.`;if(short&&Math.abs(n)>=1e3)return `CHF ${(n/1e3).toLocaleString("de-CH",{maximumFractionDigits:0})} Tsd.`;return new Intl.NumberFormat("de-CH",{style:"currency",currency:"CHF",maximumFractionDigits:0}).format(n)};
-function qIndex(q){const m=String(q).match(/(\d{4})-Q([1-4])/);return m?Number(m[1])*4+Number(m[2])-1:0}
-function qFromIndex(index){return `${Math.floor(index/4)}-Q${index%4+1}`}
-function makeQuarters(start,count){const first=qIndex(start);return Array.from({length:count},(_,i)=>qFromIndex(first+i))}
-function qLabel(q){if(!q)return "Termin offen";const [y,n]=q.split("-Q");return `Q${n} ${y}`}
-function phaseIndex(key){return Math.max(0,PHASES.findIndex(p=>p.key===key))}
-function phaseInfo(key){return PHASES[phaseIndex(key)]}
-function phaseFromLegacy(value){const v=String(value||"");if(v.includes("21"))return "machbarkeit";if(v.includes("PW"))return "planerwahl";if(/31|32|33/.test(v))return "planung";if(v.includes("41"))return "vergabe";if(/51|52/.test(v))return "realisierung";if(v.includes("53"))return "abschluss";if(v.includes("U"))return "realisierung";return "anlass"}
-function canonicalResourceName(value){
-  const raw=String(value||"").trim(),key=resourceKey(raw);
-  const aliases={iris:"Iris",irisammann:"Iris",alex:"Alex",fabri:"Fabri",tresto:"TRESTO",buro8:"Büro 8",bk:"BK",baukommission:"BK",bhb:"BHB",bauherrenbegleitung:"BHB",externerpartner:"externer Partner",andereexternepartner:"externer Partner"};
-  return aliases[key]||raw;
+const esc = value => String(value ?? "").replace(/[&<>'"]/g, character => ({
+  "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;"
+}[character]));
+const num = numberValue;
+const chf = (value, short = false) => {
+  const number = num(value);
+  if (!number) return "CHF 0";
+  if (short && Math.abs(number) >= 1e6) return `CHF ${(number / 1e6).toLocaleString("de-CH", { maximumFractionDigits: 1 })} Mio.`;
+  if (short && Math.abs(number) >= 1e3) return `CHF ${(number / 1e3).toLocaleString("de-CH", { maximumFractionDigits: 0 })} Tsd.`;
+  return new Intl.NumberFormat("de-CH", { style: "currency", currency: "CHF", maximumFractionDigits: 0 }).format(number);
+};
+
+function qIndex(quarter) {
+  const index = quarterIndex(quarter);
+  return Number.isFinite(index) ? index : 0;
 }
-function inferKind(p){const t=`${p.measure} ${p.object}`.toLowerCase();if(p.phase?.includes("U")||(/küchengeräte|fernwärmeanschluss|einfache badsanierung|kurzfristige unterhalt/.test(t)&&p.currentOwner==="Geschäftsstelle"))return "Kleinprojekt";return "Bauprojekt"}
-function inferRoles(p){return {gs:p.currentOwner==="Geschäftsstelle"?"Geschäftsstelle":"offen",bk:p.bgrResponsibility==="Baukommission"?(p.currentOwner||"Baukommission"):"offen",vs:"nach Bedarf",bhb:["Büro 8","Tresto","TRESTO","andere externe Partner"].includes(p.projectManagement)?p.projectManagement:"offen",control:p.control||"offen",deputy:p.deputy||"offen"}}
-function defaultPhasePlan(currentKey){const current=phaseIndex(currentKey);return PHASES.map((phase,i)=>({phaseKey:phase.key,status:i<current?"done":i===current?"current":"open",startQuarter:"",endQuarter:""}))}
-function defaultMilestones(){return NORM_MILESTONES.map(m=>({...m,quarter:""}))}
-function rawMotherCost(project){const flows=project.cashflow||[];const known=flows.filter(x=>x.status==="bekannt").reduce((s,x)=>s+num(x.amount),0);return known||num(project.cost)}
-function normalizeProject(p){
-  const motherPhaseKey=p.motherPhaseKey||phaseFromLegacy(p.phase);const currentPhaseKey=p.currentPhaseKey||p.phaseKey||motherPhaseKey;
-  const inferredAssignee=canonicalResourceName(p.currentAssignee||p.currentOwner||p.bgrResponsibility||"");
-  return {...clone(p),kind:p.kind||inferKind(p),motherPhaseKey,currentPhaseKey,currentAssignee:RESOURCE_OPTIONS.includes(inferredAssignee)?inferredAssignee:"",motherQuarter:p.motherQuarter||((parseInt(p.startYear,10)||2026)>2026?`${p.startYear}-Q1`:START_QUARTER),roles:p.roles||inferRoles(p),phasePlan:Array.isArray(p.phasePlan)&&p.phasePlan.length===PHASES.length?p.phasePlan:defaultPhasePlan(currentPhaseKey),demands:Array.isArray(p.demands)?p.demands.map(d=>({...d,name:canonicalResourceName(d.name)})):[],phaseCosts:Array.isArray(p.phaseCosts)?p.phaseCosts:[],milestones:Array.isArray(p.milestones)&&p.milestones.length?p.milestones:defaultMilestones()};
+function qFromIndex(index) { return `${Math.floor(index / 4)}-Q${index % 4 + 1}`; }
+function makeQuarters(start, count) {
+  const first = qIndex(start);
+  return Array.from({ length: count }, (_, index) => qFromIndex(first + index));
 }
-function resourceKey(name){return String(name||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z0-9]+/g,"").trim()}
-function plannedPhases(project){return project.phasePlan.filter(row=>row.startQuarter&&row.endQuarter)}
-function planAt(project,quarter){return project.phasePlan.find(row=>row.startQuarter&&row.endQuarter&&qIndex(quarter)>=qIndex(row.startQuarter)&&qIndex(quarter)<=qIndex(row.endQuarter))||null}
-function phasePlanIssues(project){const issues=[];let previousEnd=null;project.phasePlan.forEach(row=>{if(Boolean(row.startQuarter)!==Boolean(row.endQuarter))issues.push(`${phaseInfo(row.phaseKey).short}: Start oder Ende fehlt`);if(row.startQuarter&&row.endQuarter&&qIndex(row.endQuarter)<qIndex(row.startQuarter))issues.push(`${phaseInfo(row.phaseKey).short}: Ende vor Start`);if(previousEnd&&row.startQuarter&&qIndex(row.startQuarter)<previousEnd)issues.push(`${phaseInfo(row.phaseKey).short}: überschneidet vorherige Phase`);if(row.endQuarter)previousEnd=Math.max(previousEnd||0,qIndex(row.endQuarter))});return issues}
-function projectIssues(project){const issues=[];if(!project.currentAssignee)issues.push("Verantwortung aktuelle Phase offen");if(!plannedPhases(project).length)issues.push("Phasenplan offen");if(project.kind==="Bauprojekt"&&phaseIndex(project.currentPhaseKey)>=1&&(!project.roles.bhb||project.roles.bhb.toLowerCase()==="offen"))issues.push("Bauherrenbegleitung offen");if(plannedPhases(project).some(row=>qIndex(row.endQuarter)>=qIndex(START_QUARTER))&&!project.demands.length)issues.push("Ressourcenbedarf offen");if(plannedPhases(project).length&&!project.phaseCosts.length)issues.push("Phasenkosten offen");issues.push(...phasePlanIssues(project));return issues}
-function securedCost(project){return project.phaseCosts.filter(x=>["approved","bound"].includes(x.status)).reduce((s,x)=>s+num(x.amount),0)}
-function changedProject(p){const baseline=BASELINE.find(x=>x.id===p.id);return !baseline||JSON.stringify(p)!==JSON.stringify(baseline)}
+function qLabel(quarter) {
+  if (!quarter) return "Termin offen";
+  const [year, number] = quarter.split("-Q");
+  return `Q${number} ${year}`;
+}
+function monthLabel(month) {
+  if (!month) return "Monat offen";
+  return new Intl.DateTimeFormat("de-CH", { month: "short", year: "numeric", timeZone: "UTC" })
+    .format(new Date(`${month}-01T00:00:00Z`));
+}
+function monthsForQuarter(quarter) {
+  const [year, q] = quarter.split("-Q").map(Number);
+  const first = (q - 1) * 3 + 1;
+  return [0, 1, 2].map(offset => `${year}-${String(first + offset).padStart(2, "0")}`);
+}
+function phaseIndex(key) { return Math.max(0, PHASES.findIndex(phase => phase.key === key)); }
+function phaseInfo(key) { return PHASES[phaseIndex(key)]; }
+function phaseFromLegacy(value) {
+  const text = String(value || "");
+  if (text.includes("21")) return "machbarkeit";
+  if (text.includes("PW")) return "planerwahl";
+  if (/31|32|33/.test(text)) return "planung";
+  if (text.includes("41")) return "vergabe";
+  if (/51|52/.test(text)) return "realisierung";
+  if (text.includes("53")) return "abschluss";
+  if (text.includes("U")) return "realisierung";
+  return "anlass";
+}
+function inferKind(project) {
+  const text = `${project.measure} ${project.object}`.toLowerCase();
+  return project.phase?.includes("U") || (/küchengeräte|fernwärmeanschluss|einfache badsanierung|kurzfristige unterhalt/.test(text) && project.currentOwner === "Geschäftsstelle")
+    ? "Kleinprojekt"
+    : "Bauprojekt";
+}
+function inferRoles(project) {
+  return {
+    gs: project.currentOwner === "Geschäftsstelle" ? "Geschäftsstelle" : "offen",
+    bk: project.bgrResponsibility === "Baukommission" ? (project.currentOwner || "Baukommission") : "offen",
+    vs: "nach Bedarf",
+    bhb: ["Büro 8", "Tresto", "TRESTO", "andere externe Partner"].includes(project.projectManagement) ? project.projectManagement : "offen",
+    control: project.control || "offen",
+    deputy: project.deputy || "offen"
+  };
+}
+function defaultPhasePlan(currentKey) {
+  const current = phaseIndex(currentKey);
+  return PHASES.map((phase, index) => ({
+    phaseKey: phase.key,
+    status: index < current ? "done" : index === current ? "current" : "open",
+    startQuarter: "",
+    endQuarter: ""
+  }));
+}
+function rawMotherCost(project) {
+  const known = (project.cashflow || []).filter(item => item.status === "bekannt").reduce((sum, item) => sum + num(item.amount), 0);
+  return known || num(project.cost);
+}
+function normalizeProject(project) {
+  const motherPhaseKey = project.motherPhaseKey || phaseFromLegacy(project.phase);
+  const currentPhaseKey = project.currentPhaseKey || project.phaseKey || motherPhaseKey;
+  const inferredAssignee = canonicalResourceName(project.currentAssignee || project.currentOwner || project.bgrResponsibility || "");
+  const migrated = migrateState({ projects: [project] }).projects[0];
+  return {
+    ...clone(project),
+    ...migrated,
+    kind: project.kind || inferKind(project),
+    motherPhaseKey,
+    currentPhaseKey,
+    currentAssignee: ROLE_OPTIONS.includes(inferredAssignee) ? inferredAssignee : "",
+    motherQuarter: project.motherQuarter || ((parseInt(project.startYear, 10) || 2026) > 2026 ? `${project.startYear}-Q1` : START_QUARTER),
+    roles: project.roles || inferRoles(project),
+    phasePlan: Array.isArray(project.phasePlan) && project.phasePlan.length === PHASES.length ? project.phasePlan : defaultPhasePlan(currentPhaseKey),
+    phaseCosts: Array.isArray(project.phaseCosts) ? project.phaseCosts : [],
+    gateHistory: Array.isArray(project.gateHistory) ? project.gateHistory : []
+  };
+}
 
 const BASELINE = BASELINE_PROJECTS.map(normalizeProject);
-let state=loadState();let history=loadHistory();let selectedId=state.projects[0]?.id;let longOpen=false;let editPhasePlan=[];let editDemands=[];let editPhaseCosts=[];let editMilestones=[];
-function loadState(){try{const saved=JSON.parse(localStorage.getItem(STORE_KEY)||"null");if(saved?.projects)return {...saved,projects:saved.projects.map(normalizeProject),capacities:Array.isArray(saved.capacities)?saved.capacities.map(c=>({...c,name:canonicalResourceName(c.name)})):[]};}catch{}return {projects:clone(BASELINE),capacities:[],deletedIds:[]}}
-function loadHistory(){try{return JSON.parse(localStorage.getItem(HISTORY_KEY)||"[]")}catch{return []}}
-function save(){localStorage.setItem(STORE_KEY,JSON.stringify(state));renderAll()}
-function snapshot(label){history.push({label,state:clone(state)});history=history.slice(-12);localStorage.setItem(HISTORY_KEY,JSON.stringify(history))}
-function changeCount(){return state.projects.filter(changedProject).length+state.deletedIds.length+state.capacities.length}
-function toast(message){const t=$("#toast");t.textContent=message;t.classList.add("show");clearTimeout(toast.timer);toast.timer=setTimeout(()=>t.classList.remove("show"),2400)}
 
-function renderAll(){renderHeader();renderTimeline();renderDetail();renderResources();renderFinance()}
-function renderHeader(){
-  const planned=state.projects.reduce((s,p)=>s+plannedPhases(p).length,0);const gaps=allResourceCells().filter(x=>x.state==="gap").length;const approved=allPhaseCosts().filter(x=>x.status==="approved").reduce((s,x)=>s+num(x.amount),0);const bound=allPhaseCosts().filter(x=>x.status==="bound").reduce((s,x)=>s+num(x.amount),0);const changes=changeCount();
-  $("#data-state").textContent=changes?`${changes} lokale Planungsänderungen`:"aktueller Stand Mutterliste";
-  $("#kpis").innerHTML=[["Vorhaben",state.projects.length,"im Portfolio"],["Geplante Phasen",planned,`von ${state.projects.length*PHASES.length}`],["Sichere Ressourcenlücken",gaps,gaps?"nächste 36 Monate":"keine erkannt"],["Finanziell freigegeben",chf(approved,true),"alle Jahre"],["Vertraglich gebunden",chf(bound,true),"alle Jahre"]].map(x=>`<div class="kpi"><span>${x[0]}</span><strong>${x[1]}</strong><small>${x[2]}</small></div>`).join("");
-  $("#undo").disabled=!history.length;
+function emptyState() {
+  return {
+    schemaVersion: SCHEMA_VERSION,
+    mode: "sharp",
+    activeScenarioId: null,
+    projects: clone(BASELINE),
+    capacities: [],
+    deletedIds: [],
+    auditLog: [],
+    scenarios: []
+  };
 }
-function filteredProjects(){const search=$("#search").value.trim().toLowerCase(),kind=$("#kind-filter").value,phase=$("#phase-filter").value,pressure=$("#only-pressure").checked;return state.projects.filter(p=>(!search||`${p.object} ${p.measure}`.toLowerCase().includes(search))&&(kind==="all"||p.kind===kind)&&(phase==="all"||p.currentPhaseKey===phase)&&(!pressure||projectIssues(p).length))}
-function renderTimeline(){
-  const list=filteredProjects().sort((a,b)=>qIndex(a.motherQuarter)-qIndex(b.motherQuarter)||a.object.localeCompare(b.object,"de"));
-  $("#phase-legend").innerHTML=PHASES.map(p=>`<span><i class="${p.className}"></i>${p.short}</span>`).join("");
-  const header=`<div class="timeline-header"><div>${list.length} Projekte</div>${DISPLAY_QUARTERS.map(q=>`<div>${qLabel(q)}</div>`).join("")}</div>`;
-  const rows=list.map(p=>{const issues=projectIssues(p);return `<div class="timeline-row ${p.id===selectedId?"selected":""}" data-select="${esc(p.id)}"><div class="project-label"><strong>${esc(p.object)}</strong><span>${esc(p.measure)} · ${esc(p.kind)}</span>${issues.length?'<i class="pressure-dot" title="Klärungsbedarf"></i>':""}</div>${DISPLAY_QUARTERS.map(q=>{const row=planAt(p,q);const mother=p.motherQuarter===q;return `<div class="qcell">${row?`<div class="phase-block ${phaseInfo(row.phaseKey).className}" title="Geplant: ${esc(phaseInfo(row.phaseKey).label)}">${phaseInfo(row.phaseKey).short}</div>`:mother?`<div class="mother-marker ${phaseInfo(p.currentPhaseKey).className}" title="Aktueller Stand Mutterliste: ${esc(phaseInfo(p.currentPhaseKey).label)}"></div>`:'<i class="empty-cell"></i>'}</div>`}).join("")}</div>`}).join("");
-  $("#timeline").innerHTML=header+(rows||'<div class="empty-note">Keine Projekte entsprechen dem Filter.</div>');renderLongHorizon();
+function normalizeWorkspace(workspace) {
+  const migrated = migrateState(workspace, BASELINE);
+  return {
+    ...migrated,
+    projects: migrated.projects.map(normalizeProject),
+    scenarios: undefined
+  };
 }
-function renderLongHorizon(){const years=[2030,2031,2032,2033,2034,2035,2036,"10+"];$("#long-horizon").classList.toggle("hidden",!longOpen);$("#expand-long").textContent=longOpen?"Jahre 4 bis 10 ausblenden":"Jahre 4 bis 10 einblenden";$("#long-horizon").innerHTML=`<div class="long-title"><strong>Mittelfrist und Langfrist</strong><span>Phasen mit eingetragener Planung</span></div><div class="long-grid">${years.map(y=>{const entries=state.projects.flatMap(p=>p.phasePlan.filter(r=>r.startQuarter&&(y==="10+"?parseInt(r.startQuarter,10)>2036:parseInt(r.startQuarter,10)===y)).map(r=>({p,r})));return `<div class="year-bucket"><strong>${y==="10+"?"> 10 Jahre":y}</strong><b>${entries.length}</b><span>${entries.slice(0,2).map(x=>`${esc(x.p.object)} · ${phaseInfo(x.r.phaseKey).short}`).join(" · ")||"noch keine Phase geplant"}</span></div>`}).join("")}</div>`}
-function renderDetail(){let p=state.projects.find(x=>x.id===selectedId);if(!p){p=state.projects[0];selectedId=p?.id}if(!p){$("#project-detail").innerHTML='<div class="empty-note">Noch kein Projekt vorhanden.</div>';return}const issues=projectIssues(p),planned=plannedPhases(p),nextMilestone=p.milestones.filter(m=>m.quarter).sort((a,b)=>qIndex(a.quarter)-qIndex(b.quarter)).find(m=>qIndex(m.quarter)>=qIndex(START_QUARTER));const people=p.demands.slice().sort((a,b)=>qIndex(a.quarter)-qIndex(b.quarter)).slice(0,4);$("#project-detail").innerHTML=`<div class="project-cover"><div class="meta"><span>${esc(p.kind)} · aktueller Stand</span><span class="status-chip">${issues.length?`${issues.length} Punkte offen`:"Plan prüfbar"}</span></div><h3>${esc(p.object)}</h3><p>${esc(p.measure)}</p></div><div class="project-body"><div class="mother-current"><span>Stand Mutterliste</span><strong>${esc(phaseInfo(p.motherPhaseKey).label)}</strong><small>${p.currentAssignee?`Verantwortung aktuelle Phase: ${esc(p.currentAssignee)}`:"Verantwortung aktuelle Phase noch offen"}</small></div><div class="next-box"><span>Nächster terminierter Meilenstein</span><strong>${esc(nextMilestone?.name||"noch nicht terminiert")}</strong><small>${nextMilestone?.quarter?qLabel(nextMilestone.quarter):"Im Projekt planen"}${nextMilestone?.owner?` · ${esc(nextMilestone.owner)}`:""}</small></div><span class="section-label">Alle Projektphasen</span><div class="phase-steps">${PHASES.map(ph=>{const row=p.phasePlan.find(x=>x.phaseKey===ph.key);return `<i class="phase-step ${ph.className} ${row?.startQuarter?"done":""} ${ph.key===p.currentPhaseKey?"current":""}" title="${esc(ph.label)} · ${row?.startQuarter?`${qLabel(row.startQuarter)} bis ${qLabel(row.endQuarter)}`:"noch nicht geplant"}"></i>`}).join("")}</div><div class="perspectives"><div class="perspective"><span>Phasen geplant</span><strong>${planned.length} von 7</strong></div><div class="perspective"><span>Ressourceneinsätze</span><strong>${p.demands.length||"offen"}</strong></div><div class="perspective"><span>Freigegeben / gebunden</span><strong>${chf(securedCost(p),true)}</strong></div><div class="perspective"><span>Offene Punkte</span><strong>${issues.length}</strong></div></div><span class="section-label">Ressourcen dieses Projekts</span><div class="mini-resources">${people.length?people.map(x=>`<div class="mini-resource"><div><strong>${esc(x.name)} · ${esc(x.function)}</strong><span>${qLabel(x.quarter)} · ${phaseInfo(x.phaseKey).short}</span></div><b>${num(x.min)} bis ${num(x.max)} PT</b></div>`).join(""):'<div class="empty-note">Noch kein Ressourcenbedarf eingetragen.</div>'}</div>${issues.length?`<div class="issue-list">${issues.slice(0,4).map(x=>`<span>${esc(x)}</span>`).join("")}</div>`:""}<div class="project-actions"><button class="button primary" data-edit-project="${esc(p.id)}">Projekt planen</button><button class="button ghost" data-focus-resource="${esc(resourceKey(people[0]?.name||""))}">Wirkung sehen</button></div>${changedProject(p)?`<button class="restore-link" data-restore="${esc(p.id)}">Planung auf Stand Mutterliste zurücksetzen</button>`:""}</div>`}
+function loadState() {
+  try {
+    const raw = localStorage.getItem(STORE_KEY) || localStorage.getItem(LEGACY_STORE_KEY);
+    if (!raw) return emptyState();
+    const parsed = JSON.parse(raw);
+    const migrated = migrateState(parsed, BASELINE);
+    return {
+      ...migrated,
+      projects: migrated.projects.map(normalizeProject),
+      scenarios: (migrated.scenarios || []).map(scenario => ({
+        ...scenario,
+        ...normalizeWorkspace(scenario)
+      }))
+    };
+  } catch (error) {
+    console.error("Gespeicherter Stand konnte nicht geladen werden", error);
+    return emptyState();
+  }
+}
+function loadHistory() {
+  try { return JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]"); }
+  catch { return []; }
+}
+function activeWorkspace() {
+  if (state.mode === "scenario") {
+    return state.scenarios.find(scenario => scenario.id === state.activeScenarioId) || state;
+  }
+  return state;
+}
+function save(label = "") {
+  state.schemaVersion = SCHEMA_VERSION;
+  localStorage.setItem(STORE_KEY, JSON.stringify(state));
+  if (label) addAudit(label);
+  renderAll();
+}
+function addAudit(action, detail = "") {
+  activeWorkspace().auditLog.push({
+    id: uuid("audit"),
+    at: new Date().toISOString(),
+    action,
+    detail
+  });
+  localStorage.setItem(STORE_KEY, JSON.stringify(state));
+}
+function snapshot(label) {
+  history.push({ label, state: clone(state) });
+  history = history.slice(-30);
+  localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+}
+function download(name, content, type) {
+  const blob = new Blob([content], { type });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = name;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+function toast(message) {
+  const element = $("#toast");
+  element.textContent = message;
+  element.classList.add("show");
+  clearTimeout(toast.timer);
+  toast.timer = setTimeout(() => element.classList.remove("show"), 3000);
+}
 
-function resourceGroups(){const map=new Map();state.capacities.forEach(x=>{const key=resourceKey(x.name);if(key&&!map.has(key))map.set(key,{key,name:x.name,function:x.function})});state.projects.flatMap(p=>p.demands).forEach(x=>{const key=resourceKey(x.name);if(key&&!map.has(key))map.set(key,{key,name:x.name,function:x.function})});return [...map.values()].sort((a,b)=>a.name.localeCompare(b.name,"de"))}
-function capacityFor(key,q){const rows=state.capacities.filter(x=>resourceKey(x.name)===key&&x.quarter===q);return {min:rows.reduce((s,x)=>s+num(x.min),0),max:rows.reduce((s,x)=>s+num(x.max),0)}}
-function demandFor(key,q){const rows=state.projects.flatMap(p=>p.demands).filter(x=>resourceKey(x.name)===key&&x.quarter===q);return {min:rows.reduce((s,x)=>s+num(x.min),0),max:rows.reduce((s,x)=>s+num(x.max),0)}}
-function resourceState(d,c){if(!d.max)return "ok";if(!c.max)return "open";if(d.max<=c.min)return "ok";if(d.min>c.max)return "gap";return "watch"}
-function resourceGap(d,c,stateName){if(stateName==="gap")return {min:Math.max(0,d.min-c.max),max:Math.max(0,d.max-c.min)};if(stateName==="watch")return {min:0,max:Math.max(0,d.max-c.min)};return {min:0,max:0}}
-function allResourceCells(){return resourceGroups().flatMap(group=>DISPLAY_QUARTERS.map(q=>{const demand=demandFor(group.key,q),capacity=capacityFor(group.key,q),stateName=resourceState(demand,capacity);return {group,q,demand,capacity,state:stateName,gap:resourceGap(demand,capacity,stateName)}})).filter(x=>x.demand.max||x.capacity.max)}
-function renderResources(){
-  const groups=resourceGroups(),select=$("#resource-focus"),previous=select.value;select.innerHTML=groups.length?groups.map(g=>`<option value="${esc(g.key)}">${esc(g.name)}${g.function?` · ${esc(g.function)}`:""}</option>`).join(""):'<option value="">Noch keine Ressource</option>';if(groups.some(g=>g.key===previous))select.value=previous;const focus=select.value,max=Math.max(1,...DISPLAY_QUARTERS.flatMap(q=>{const d=demandFor(focus,q),c=capacityFor(focus,q);return[d.max,c.max]}));
-  $("#resource-chart").innerHTML=DISPLAY_QUARTERS.map(q=>{const d=demandFor(focus,q),c=capacityFor(focus,q),stateName=resourceState(d,c),gap=resourceGap(d,c,stateName);return `<div class="resource-column ${stateName}"><div class="bar-space"><div class="capacity-range" style="height:${c.max/max*100}%" title="Verfügbar ${c.min} bis ${c.max} PT"></div><div class="demand-range" style="height:${d.max/max*100}%" title="Bedarf ${d.min} bis ${d.max} PT"></div></div><b class="bar-value">${d.max||c.max?`${d.min}–${d.max} / ${c.min}–${c.max}`:"–"}</b>${gap.max?`<span class="gap-label">Lücke bis ${gap.max} PT</span>`:""}<small>${qLabel(q)}</small></div>`}).join("");
-  $("#capacity-count").textContent=state.capacities.length?`${state.capacities.length} verbindliche Einträge`:"noch keine Einträge";$("#capacity-list").innerHTML=state.capacities.length?state.capacities.slice().sort((a,b)=>qIndex(a.quarter)-qIndex(b.quarter)).map(x=>`<div class="capacity-list-row" data-edit-capacity="${esc(x.id)}"><div><strong>${esc(x.name)} · ${esc(x.function)}</strong><span>${qLabel(x.quarter)}</span></div><b>${num(x.min)} bis ${num(x.max)} PT</b><span>›</span></div>`).join(""):'<div class="empty-note">Noch keine verbindliche Verfügbarkeit erfasst.</div>';
-  const active=allResourceCells(),alerts=active.filter(x=>["gap","watch","open"].includes(x.state)&&x.demand.max);const strip=$("#resource-alert");strip.classList.toggle("hidden",!alerts.length);if(alerts.length){const sure=alerts.filter(x=>x.state==="gap").length,possible=alerts.filter(x=>x.state==="watch").length,open=alerts.filter(x=>x.state==="open").length;strip.innerHTML=`<strong>${sure?`${sure} sichere Ressourcenlücken`:"Keine sichere Lücke"}</strong><span>${possible} mögliche Lücken · ${open} Quartale ohne verbindliche Verfügbarkeit</span>`}
-  const quarters=DISPLAY_QUARTERS.filter(q=>groups.some(g=>demandFor(g.key,q).max||capacityFor(g.key,q).max));$("#resource-matrix").innerHTML=groups.length&&quarters.length?`<table class="resource-matrix"><thead><tr><th>Ressource · Bedarf / verfügbar</th>${quarters.map(q=>`<th>${qLabel(q)}</th>`).join("")}</tr></thead><tbody>${groups.map(g=>`<tr><td><strong>${esc(g.name)}</strong><small>${esc(g.function||"")}</small></td>${quarters.map(q=>{const d=demandFor(g.key,q),c=capacityFor(g.key,q),stateName=resourceState(d,c),gap=resourceGap(d,c,stateName);return `<td class="matrix-cell ${stateName}" title="Bedarf ${d.min} bis ${d.max} PT · verfügbar ${c.min} bis ${c.max} PT">${d.min}–${d.max}<br><small>${c.min}–${c.max}</small>${gap.max?`<b>Δ ${gap.min}–${gap.max}</b>`:""}</td>`}).join("")}</tr>`).join("")}</tbody></table>`:'<div class="empty-note">Ressourcenbedarf wird in den Projekten erfasst. Verfügbarkeit wird hier verbindlich hinterlegt. Erst dann entsteht eine belastbare Gesamtsicht.</div>';
+let state = loadState();
+let history = loadHistory();
+let selectedId = activeWorkspace().projects[0]?.id;
+let longOpen = false;
+let editPhasePlan = [];
+let editDemands = [];
+let editPhaseCosts = [];
+let editGateHistory = [];
+
+function projects() { return activeWorkspace().projects; }
+function capacities() { return activeWorkspace().capacities; }
+function plannedPhases(project) { return project.phasePlan.filter(row => row.startQuarter && row.endQuarter); }
+function planAt(project, quarter) {
+  return project.phasePlan.find(row => row.startQuarter && row.endQuarter && qIndex(quarter) >= qIndex(row.startQuarter) && qIndex(quarter) <= qIndex(row.endQuarter)) || null;
 }
-function allPhaseCosts(){return state.projects.flatMap(p=>p.phaseCosts.map(x=>({...x,projectId:p.id,object:p.object})))}
-function costForYears(years,statuses=null){return allPhaseCosts().filter(x=>years.includes(Number(x.year))&&(!statuses||statuses.includes(x.status))).reduce((s,x)=>s+num(x.amount),0)}
-function renderFinance(){
-  const horizons=[{label:"0 bis 1 Jahr",years:[2026,2027]},{label:"2 bis 3 Jahre",years:[2028,2029]},{label:"4 bis 10 Jahre",years:[2030,2031,2032,2033,2034,2035,2036]}];$("#finance-horizons").innerHTML=horizons.map(h=>{const secured=costForYears(h.years,["approved","bound"]),bound=costForYears(h.years,["bound"]),planning=costForYears(h.years,["estimate","budgeted"]);return `<article><span>${h.label}</span><strong>${chf(secured,true)}</strong><small>freigegeben und gebunden</small><div><b>${chf(bound,true)}</b> gebunden · <b>${chf(planning,true)}</b> Planung</div></article>`}).join("");
-  const totals=YEARS.map(year=>Object.fromEntries(COST_STATUSES.map(status=>[status.key,costForYears([year],[status.key])]))),max=Math.max(1,...totals.map(t=>Object.values(t).reduce((a,b)=>a+b,0)));$("#finance-chart").innerHTML=YEARS.map((year,i)=>{const total=Object.values(totals[i]).reduce((a,b)=>a+b,0);return `<div class="finance-year"><strong>${total?chf(total,true):"–"}</strong><div class="finance-stack" style="height:${total/max*88}%">${COST_STATUSES.map(s=>`<i class="${s.className}" style="height:${total?totals[i][s.key]/total*100:0}%" title="${s.label}: ${chf(totals[i][s.key])}"></i>`).join("")}</div><span>${year}</span></div>`}).join("");$("#finance-legend").innerHTML=COST_STATUSES.map(s=>`<span><i class="${s.className}"></i>${s.label}</span>`).join("");
+function phasePlanIssues(project) {
+  const issues = [];
+  let previousEnd = null;
+  project.phasePlan.forEach(row => {
+    if (Boolean(row.startQuarter) !== Boolean(row.endQuarter)) issues.push(`${phaseInfo(row.phaseKey).short}: Start oder Ende fehlt`);
+    if (row.startQuarter && row.endQuarter && qIndex(row.endQuarter) < qIndex(row.startQuarter)) issues.push(`${phaseInfo(row.phaseKey).short}: Ende vor Start`);
+    if (previousEnd != null && row.startQuarter && qIndex(row.startQuarter) < previousEnd) issues.push(`${phaseInfo(row.phaseKey).short}: überschneidet vorherige Phase`);
+    if (row.endQuarter) previousEnd = Math.max(previousEnd ?? 0, qIndex(row.endQuarter));
+  });
+  return issues;
+}
+function projectIssues(project) {
+  const issues = [];
+  if (!project.currentAssignee) issues.push("Verantwortung aktuelle Phase offen");
+  if (!plannedPhases(project).length) issues.push("Phasenplan offen");
+  if (project.kind === "Bauprojekt" && phaseIndex(project.currentPhaseKey) >= 1 && (!project.roles.bhb || project.roles.bhb.toLowerCase() === "offen")) issues.push("Bauherrenbegleitung offen");
+  for (const demand of project.demands) {
+    const planning = demandPlanningState(demand);
+    if (planning.key === "unestimated") issues.push(`${demand.name || "Ressource"}: Gesamtbedarf nicht geschätzt`);
+    if (planning.key === "unplanned" || planning.key === "partial") issues.push(`${demand.name}: ${planning.label} (${planning.restMin}–${planning.restMax} PT)`);
+    if (planning.key === "overplanned") issues.push(`${demand.name}: Monatsplanung übersteigt Gesamtbedarf`);
+  }
+  project.phaseCosts.forEach(cost => {
+    if (!cost.source || !cost.informationDate) issues.push(`${phaseInfo(cost.phaseKey).short}: Kostenquelle oder Informationsdatum offen`);
+  });
+  if (plannedPhases(project).length && !project.phaseCosts.length) issues.push("Phasenkosten offen");
+  issues.push(...phasePlanIssues(project));
+  return issues;
+}
+function securedCost(project) {
+  return project.phaseCosts.filter(item => ["approved", "bound"].includes(item.status)).reduce((sum, item) => sum + num(item.amount), 0);
+}
+function changedProject(project) {
+  const baseline = BASELINE.find(item => item.id === project.id);
+  return !baseline || JSON.stringify(project) !== JSON.stringify(baseline);
 }
 
-function openProject(id,newProject=false){let p=state.projects.find(x=>x.id===id);if(newProject)p=normalizeProject({id:`neu-${Date.now()}`,object:"",measure:"",kind:"Bauprojekt",phase:"-",motherPhaseKey:"anlass",currentPhaseKey:"anlass",currentAssignee:"",roles:{gs:"offen",bk:"offen",vs:"nach Bedarf",bhb:"offen",control:"offen",deputy:"offen"},cashflow:[],cost:"",nextDecision:""});if(!p)return;$("#project-id").value=p.id;$("#project-dialog-title").textContent=newProject?"Neues Projekt":p.object;$("#mother-state").textContent=phaseInfo(p.motherPhaseKey).label;$("#f-object").value=p.object;$("#f-measure").value=p.measure;$("#f-kind").value=p.kind;$("#f-phase").value=p.currentPhaseKey;$("#f-current-assignee").innerHTML=resourceOptions(p.currentAssignee,"Verantwortung wählen");$("#f-next").value=p.nextDecision||"";setRoleSelect("#f-gs",p.roles.gs,"offen");setRoleSelect("#f-bk",p.roles.bk,"offen");setRoleSelect("#f-vs",p.roles.vs,"nach Bedarf");setRoleSelect("#f-bhb",p.roles.bhb,"offen");setRoleSelect("#f-control",p.roles.control,"offen");setRoleSelect("#f-deputy",p.roles.deputy,"offen");editPhasePlan=clone(p.phasePlan);editDemands=clone(p.demands);editPhaseCosts=clone(p.phaseCosts);editMilestones=clone(p.milestones);$("#mother-cost-note").innerHTML=rawMotherCost(p)?`<strong>Mutterliste: ${chf(rawMotherCost(p))}</strong><span>Dieser Wert ist nicht qualifiziert und wird deshalb nicht als gesichert gezählt. Bitte unten einer Projektphase, einem Jahr und einem Status zuordnen.</span>`:'<strong>Mutterliste: kein qualifizierter Kostenwert</strong><span>Phasenkosten werden im Cockpit neu und nachvollziehbar aufgebaut.</span>';renderPhasePlanEditor();renderDemandEditor();renderPhaseCostEditor();renderMilestones();$("#delete-project").classList.toggle("hidden",newProject);setFormTab("base");$("#project-dialog").showModal()}
-function setFormTab(name){$$('[data-form-tab]').forEach(b=>b.classList.toggle("active",b.dataset.formTab===name));$$('[data-panel]').forEach(p=>p.classList.toggle("hidden",p.dataset.panel!==name))}
-function quarterOptions(selected,blank=true){return `${blank?'<option value="">noch offen</option>':""}${ALL_QUARTERS.map(q=>`<option value="${q}" ${q===selected?"selected":""}>${qLabel(q)}</option>`).join("")}`}
-function phaseOptions(selected){return PHASES.map(p=>`<option value="${p.key}" ${p.key===selected?"selected":""}>${p.label}</option>`).join("")}
-function resourceOptions(selected="",placeholder="Ressource wählen"){
-  const value=canonicalResourceName(selected),legacy=value&&!RESOURCE_OPTIONS.includes(value)?`<option value="${esc(value)}" selected>${esc(value)} · bestehender Wert</option>`:"";
-  return `<option value="" ${value?"":"selected"}>${placeholder}</option>${legacy}${RESOURCE_OPTIONS.map(name=>`<option value="${esc(name)}" ${name===value?"selected":""}>${esc(name)}</option>`).join("")}`;
+function allAllocations() {
+  return projects().flatMap(project => project.demands.flatMap(demand =>
+    (demand.allocations || []).map(allocation => ({ ...allocation, project, demand }))
+  ));
 }
-function setRoleSelect(selector,value,emptyLabel){const normalized=canonicalResourceName(value),isEmpty=["offen","nach bedarf","noch nicht definiert"].includes(normalized.toLowerCase());$(selector).innerHTML=resourceOptions(isEmpty?"":normalized,emptyLabel)}
-function renderPhasePlanEditor(){$("#phase-plan-editor").innerHTML=editPhasePlan.map((row,i)=>`<div class="phase-plan-row ${phaseInfo(row.phaseKey).className}" data-phase-plan="${i}"><div><i></i><strong>${phaseInfo(row.phaseKey).label}</strong><span>${i===1?"Danach grosser Entscheid Gesamtvorstand":i===3?"Danach Projektfreigabe Gesamtvorstand":"Entscheid Baukommission im Kompetenzrahmen"}</span></div><label><span>Status</span><select class="pp-status"><option value="open" ${row.status==="open"?"selected":""}>offen</option><option value="planned" ${row.status==="planned"?"selected":""}>geplant</option><option value="current" ${row.status==="current"?"selected":""}>laufend</option><option value="done" ${row.status==="done"?"selected":""}>abgeschlossen</option></select></label><label><span>Start</span><select class="pp-start">${quarterOptions(row.startQuarter)}</select></label><label><span>Ende</span><select class="pp-end">${quarterOptions(row.endQuarter)}</select></label></div>`).join("")}
-function renderDemandEditor(){$("#demand-editor").innerHTML=editDemands.length?editDemands.map((x,i)=>`<div class="edit-row demand" data-demand="${i}"><label><span>Ressource</span><select class="d-name" required>${resourceOptions(x.name)}</select></label><label><span>Funktion</span><input class="d-function" value="${esc(x.function)}" placeholder="BK, BHB, GS"></label><label><span>Projektphase</span><select class="d-phase">${phaseOptions(x.phaseKey)}</select></label><label><span>Quartal</span><select class="d-quarter">${quarterOptions(x.quarter,false)}</select></label><label><span>PT min.</span><input class="d-min" type="number" min="0" step=".5" value="${esc(x.min)}"></label><label><span>PT max.</span><input class="d-max" type="number" min="0" step=".5" value="${esc(x.max)}"></label><button type="button" class="remove" data-remove-demand="${i}">×</button></div>`).join(""):'<div class="empty-note">Noch kein Ressourcenbedarf eingetragen.</div>'}
-function renderPhaseCostEditor(){$("#phase-cost-editor").innerHTML=editPhaseCosts.length?editPhaseCosts.map((x,i)=>`<div class="edit-row cost" data-phase-cost="${i}"><label><span>Projektphase</span><select class="pc-phase">${phaseOptions(x.phaseKey)}</select></label><label><span>Jahr</span><select class="pc-year">${YEARS.map(y=>`<option ${Number(x.year)===y?"selected":""}>${y}</option>`).join("")}</select></label><label><span>Betrag CHF</span><input class="pc-amount" inputmode="decimal" value="${esc(x.amount)}"></label><label><span>Qualität</span><select class="pc-status">${COST_STATUSES.map(s=>`<option value="${s.key}" ${x.status===s.key?"selected":""}>${s.label}</option>`).join("")}</select></label><button type="button" class="remove" data-remove-phase-cost="${i}">×</button></div>`).join(""):'<div class="empty-note">Noch keine Kosten einer Projektphase und einem Jahr zugeordnet.</div>'}
-function renderMilestones(){$("#milestone-editor").innerHTML=editMilestones.map((m,i)=>`<div class="milestone-row ${m.major?"major":""}"><i></i><div><strong>${esc(m.name)}</strong><span>${esc(m.owner)} · ${phaseInfo(m.phaseKey).short}${m.major?" · grosser Entscheid":""}</span></div><select data-milestone="${i}">${quarterOptions(m.quarter)}</select></div>`).join("")}
-function syncEditors(){editPhasePlan=$$("[data-phase-plan]").map((row,i)=>({...editPhasePlan[i],status:row.querySelector(".pp-status").value,startQuarter:row.querySelector(".pp-start").value,endQuarter:row.querySelector(".pp-end").value}));editDemands=$$("[data-demand]").map((row,i)=>({id:editDemands[i]?.id||`d-${Date.now()}-${i}`,name:row.querySelector(".d-name").value.trim(),function:row.querySelector(".d-function").value.trim(),phaseKey:row.querySelector(".d-phase").value,quarter:row.querySelector(".d-quarter").value,min:num(row.querySelector(".d-min").value),max:num(row.querySelector(".d-max").value)})).filter(x=>x.name&&x.function);editPhaseCosts=$$("[data-phase-cost]").map((row,i)=>({id:editPhaseCosts[i]?.id||`pc-${Date.now()}-${i}`,phaseKey:row.querySelector(".pc-phase").value,year:Number(row.querySelector(".pc-year").value),amount:row.querySelector(".pc-amount").value,status:row.querySelector(".pc-status").value})).filter(x=>num(x.amount));editMilestones=$$("[data-milestone]").map((s,i)=>({...editMilestones[i],quarter:s.value}))}
+function resourceGroups() {
+  const map = new Map();
+  capacities().forEach(item => {
+    const key = resourceKey(item.name);
+    if (key && !map.has(key)) map.set(key, { key, name: item.name, function: item.function });
+  });
+  projects().flatMap(project => project.demands).forEach(item => {
+    const key = resourceKey(item.name);
+    if (key && !map.has(key)) map.set(key, { key, name: item.name, function: item.function });
+  });
+  return [...map.values()].sort((a, b) => a.name.localeCompare(b.name, "de"));
+}
+function capacityForMonth(key, month) {
+  const row = capacities().find(item => resourceKey(item.name) === key && item.month === month);
+  return row ? { min: num(row.min), max: num(row.max) } : { min: 0, max: 0 };
+}
+function demandForMonth(key, month) {
+  const rows = allAllocations().filter(item => resourceKey(item.demand.name) === key && item.month === month);
+  return {
+    min: rows.reduce((sum, item) => sum + num(item.min), 0),
+    max: rows.reduce((sum, item) => sum + num(item.max), 0)
+  };
+}
+function quarterCell(key, quarter) {
+  const months = monthsForQuarter(quarter);
+  const demand = months.reduce((sum, month) => {
+    const value = demandForMonth(key, month);
+    return { min: sum.min + value.min, max: sum.max + value.max };
+  }, { min: 0, max: 0 });
+  const capacity = months.reduce((sum, month) => {
+    const value = capacityForMonth(key, month);
+    return { min: sum.min + value.min, max: sum.max + value.max };
+  }, { min: 0, max: 0 });
+  const monthStates = months.map(month => {
+    const monthDemand = demandForMonth(key, month);
+    const monthCapacity = capacityForMonth(key, month);
+    return { month, demand: monthDemand, capacity: monthCapacity, state: resourceState(monthDemand, monthCapacity) };
+  });
+  const severity = { ok: 0, open: 1, watch: 2, gap: 3 };
+  const worst = monthStates.sort((a, b) => severity[b.state] - severity[a.state])[0];
+  return { demand, capacity, state: worst?.state || "ok", worstMonth: worst?.month || "", gap: worst ? resourceGap(worst.demand, worst.capacity, worst.state) : { min: 0, max: 0 } };
+}
+function allResourceMonths() {
+  const months = new Set();
+  allAllocations().forEach(item => item.month && months.add(item.month));
+  capacities().forEach(item => item.month && months.add(item.month));
+  return resourceGroups().flatMap(group => [...months].map(month => {
+    const demand = demandForMonth(group.key, month);
+    const capacity = capacityForMonth(group.key, month);
+    const status = resourceState(demand, capacity);
+    return { group, month, demand, capacity, state: status, gap: resourceGap(demand, capacity, status) };
+  })).filter(item => item.demand.max || item.capacity.max);
+}
+function unplannedNeeds() {
+  return projects().flatMap(project => project.demands.map(demand => ({ project, demand, planning: demandPlanningState(demand) })))
+    .filter(item => ["unestimated", "unplanned", "partial", "overplanned"].includes(item.planning.key));
+}
 
-function openCapacity(id){const c=state.capacities.find(x=>x.id===id)||{id:"",name:"",function:"",quarter:"2027-Q1",min:"",max:""};$("#c-id").value=c.id;$("#c-name").innerHTML=resourceOptions(c.name);$("#c-function").value=c.function;$("#c-quarter").value=c.quarter;$("#c-min").value=c.min;$("#c-max").value=c.max;$("#c-confirmed").checked=Boolean(id);$("#delete-capacity").classList.toggle("hidden",!id);$("#capacity-dialog").showModal()}
-function csv(name,rows){const content="\ufeff"+rows.map(row=>row.map(v=>`"${String(v??"").replaceAll('"','""')}"`).join(";")).join("\n");const blob=new Blob([content],{type:"text/csv;charset=utf-8"}),url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)}
+function renderAll() {
+  renderHeader();
+  renderTimeline();
+  renderDetail();
+  renderResources();
+  renderFinance();
+}
+function renderHeader() {
+  const workspace = activeWorkspace();
+  const planned = projects().reduce((sum, project) => sum + plannedPhases(project).length, 0);
+  const gaps = allResourceMonths().filter(item => item.state === "gap" && item.demand.max).length;
+  const approved = allPhaseCosts().filter(item => item.status === "approved").reduce((sum, item) => sum + num(item.amount), 0);
+  const bound = allPhaseCosts().filter(item => item.status === "bound").reduce((sum, item) => sum + num(item.amount), 0);
+  const changes = projects().filter(changedProject).length + workspace.deletedIds.length + capacities().length;
+  $("#data-state").textContent = state.mode === "scenario" ? `Szenario: ${workspace.name}` : (changes ? `${changes} lokale Planungsänderungen` : "Scharfer Stand");
+  $("#mode-pill").innerHTML = `<i></i>${state.mode === "scenario" ? `Szenario: ${esc(workspace.name)}` : "Scharfer Stand"}`;
+  $("#mode-pill").classList.toggle("scenario", state.mode === "scenario");
+  $("#workspace-select").innerHTML = `<option value="sharp">Scharfer Stand</option>${state.scenarios.map(scenario => `<option value="${esc(scenario.id)}">${esc(scenario.name)}</option>`).join("")}`;
+  $("#workspace-select").value = state.mode === "scenario" ? state.activeScenarioId : "sharp";
+  $("#kpis").innerHTML = [
+    ["Vorhaben", projects().length, "im Portfolio"],
+    ["Geplante Phasen", planned, `von ${projects().length * PHASES.length}`],
+    ["Sichere Ressourcenlücken", gaps, gaps ? "monatlich erkannt" : "keine erkannt"],
+    ["Zeitlich offene Bedarfe", unplannedNeeds().length, "nicht still verteilt"],
+    ["Finanziell gesichert", chf(approved + bound, true), "freigegeben / gebunden"]
+  ].map(item => `<div class="kpi"><span>${item[0]}</span><strong>${item[1]}</strong><small>${item[2]}</small></div>`).join("");
+  $("#undo").disabled = !history.length;
+}
+function filteredProjects() {
+  const search = $("#search").value.trim().toLowerCase();
+  const kind = $("#kind-filter").value;
+  const phase = $("#phase-filter").value;
+  const pressure = $("#only-pressure").checked;
+  return projects().filter(project =>
+    (!search || `${project.object} ${project.measure}`.toLowerCase().includes(search)) &&
+    (kind === "all" || project.kind === kind) &&
+    (phase === "all" || project.currentPhaseKey === phase) &&
+    (!pressure || projectIssues(project).length)
+  );
+}
+function renderTimeline() {
+  const list = filteredProjects().sort((a, b) => qIndex(a.motherQuarter) - qIndex(b.motherQuarter) || a.object.localeCompare(b.object, "de"));
+  $("#phase-legend").innerHTML = PHASES.map(phase => `<span><i class="${phase.className}"></i>${phase.short}</span>`).join("");
+  const header = `<div class="timeline-header"><div>${list.length} Projekte</div>${DISPLAY_QUARTERS.map(quarter => `<div>${qLabel(quarter)}</div>`).join("")}</div>`;
+  const rows = list.map(project => {
+    const issues = projectIssues(project);
+    return `<div class="timeline-row ${project.id === selectedId ? "selected" : ""}" data-select="${esc(project.id)}">
+      <div class="project-label"><strong>${esc(project.object)}</strong><span>${esc(project.measure)} · ${esc(project.kind)}</span>${issues.length ? '<i class="pressure-dot" title="Klärungsbedarf"></i>' : ""}</div>
+      ${DISPLAY_QUARTERS.map(quarter => {
+        const phase = planAt(project, quarter);
+        const mother = project.motherQuarter === quarter;
+        return `<div class="qcell">${phase
+          ? `<div class="phase-block ${phaseInfo(phase.phaseKey).className}" title="${esc(phaseInfo(phase.phaseKey).label)}">${phaseInfo(phase.phaseKey).short}</div>`
+          : mother
+            ? `<div class="mother-marker ${phaseInfo(project.currentPhaseKey).className}" title="Mutterstand: ${esc(phaseInfo(project.currentPhaseKey).label)}"></div>`
+            : '<i class="empty-cell"></i>'}</div>`;
+      }).join("")}
+    </div>`;
+  }).join("");
+  $("#timeline").innerHTML = header + (rows || '<div class="empty-note">Keine Projekte entsprechen dem Filter.</div>');
+  renderLongHorizon();
+}
+function renderLongHorizon() {
+  const years = [2030, 2031, 2032, 2033, 2034, 2035, 2036, "10+"];
+  $("#long-horizon").classList.toggle("hidden", !longOpen);
+  $("#expand-long").textContent = longOpen ? "Jahre 4 bis 10 ausblenden" : "Jahre 4 bis 10 einblenden";
+  $("#long-horizon").innerHTML = `<div class="long-title"><strong>Mittelfrist und Langfrist</strong><span>Phasen mit eingetragener Planung</span></div><div class="long-grid">${years.map(year => {
+    const entries = projects().flatMap(project => project.phasePlan.filter(row => row.startQuarter && (year === "10+" ? parseInt(row.startQuarter, 10) > 2036 : parseInt(row.startQuarter, 10) === year)).map(row => ({ project, row })));
+    return `<div class="year-bucket"><strong>${year === "10+" ? "> 10 Jahre" : year}</strong><b>${entries.length}</b><span>${entries.slice(0, 2).map(item => `${esc(item.project.object)} · ${phaseInfo(item.row.phaseKey).short}`).join(" · ") || "noch keine Phase geplant"}</span></div>`;
+  }).join("")}</div>`;
+}
+function renderDetail() {
+  let project = projects().find(item => item.id === selectedId);
+  if (!project) {
+    project = projects()[0];
+    selectedId = project?.id;
+  }
+  if (!project) {
+    $("#project-detail").innerHTML = '<div class="empty-note">Noch kein Projekt vorhanden.</div>';
+    return;
+  }
+  const issues = projectIssues(project);
+  const planned = plannedPhases(project);
+  const latestGate = project.gateHistory.slice().sort((a, b) => String(b.date).localeCompare(String(a.date)))[0];
+  const resources = project.demands.slice(0, 4);
+  $("#project-detail").innerHTML = `<div class="project-cover"><div class="meta"><span>${esc(project.kind)} · ${state.mode === "scenario" ? "Szenario" : "scharfer Stand"}</span><span class="status-chip">${issues.length ? `${issues.length} Punkte offen` : "Plan prüfbar"}</span></div><h3>${esc(project.object)}</h3><p>${esc(project.measure)}</p></div>
+    <div class="project-body">
+      <div class="mother-current"><span>Stand Mutterliste</span><strong>${esc(phaseInfo(project.motherPhaseKey).label)}</strong><small>${project.currentAssignee ? `Verantwortung aktuelle Phase: ${esc(project.currentAssignee)}` : "Verantwortung aktuelle Phase noch offen"}</small></div>
+      <div class="next-box"><span>Letzter Phasentorentscheid</span><strong>${esc(latestGate?.status || "noch kein Entscheid erfasst")}</strong><small>${latestGate ? `${esc(phaseInfo(latestGate.phaseKey).short)} · ${esc(latestGate.authority)} · ${esc(latestGate.date)}` : "Im Projekt protokollieren"}</small></div>
+      <span class="section-label">Alle Projektphasen</span>
+      <div class="phase-steps">${PHASES.map(phase => {
+        const row = project.phasePlan.find(item => item.phaseKey === phase.key);
+        return `<button class="phase-step ${phase.className} ${row?.startQuarter ? "done" : ""} ${phase.key === project.currentPhaseKey ? "current" : ""}" title="${esc(phase.label)} · ${row?.startQuarter ? `${qLabel(row.startQuarter)} bis ${qLabel(row.endQuarter)}` : "noch nicht geplant"}" aria-label="${esc(phase.label)}"></button>`;
+      }).join("")}</div>
+      <div class="perspectives"><div class="perspective"><span>Phasen geplant</span><strong>${planned.length} von 7</strong></div><div class="perspective"><span>Ressourcen</span><strong>${project.demands.length || "offen"}</strong></div><div class="perspective"><span>Freigegeben / gebunden</span><strong>${chf(securedCost(project), true)}</strong></div><div class="perspective"><span>Offene Punkte</span><strong>${issues.length}</strong></div></div>
+      <span class="section-label">Ressourcen dieses Projekts</span>
+      <div class="mini-resources">${resources.length ? resources.map(demand => {
+        const planning = demandPlanningState(demand);
+        return `<div class="mini-resource"><div><strong>${esc(demand.name)} · ${esc(demand.function)}</strong><span>${phaseInfo(demand.phaseKey).short} · ${esc(planning.label)}</span></div><b>${demand.totalMin === "" ? "offen" : `${num(demand.totalMin)}–${num(demand.totalMax)} PT`}</b></div>`;
+      }).join("") : '<div class="empty-note">Noch kein Ressourcenbedarf eingetragen.</div>'}</div>
+      ${issues.length ? `<div class="issue-list">${issues.slice(0, 5).map(issue => `<span>${esc(issue)}</span>`).join("")}</div>` : ""}
+      <div class="project-actions"><button class="button primary" data-edit-project="${esc(project.id)}">Projekt planen</button><button class="button ghost" data-focus-resource="${esc(resourceKey(resources[0]?.name || ""))}">Ressourcenwirkung</button></div>
+      ${changedProject(project) && state.mode === "sharp" ? `<button class="restore-link" data-restore="${esc(project.id)}">Planung auf Stand Mutterliste zurücksetzen</button>` : ""}
+    </div>`;
+}
+function renderResources() {
+  const groups = resourceGroups();
+  const select = $("#resource-focus");
+  const previous = select.value;
+  select.innerHTML = groups.length ? groups.map(group => `<option value="${esc(group.key)}">${esc(group.name)}${group.function ? ` · ${esc(group.function)}` : ""}</option>`).join("") : '<option value="">Noch keine Ressource</option>';
+  if (groups.some(group => group.key === previous)) select.value = previous;
+  const focus = select.value;
+  const max = Math.max(1, ...DISPLAY_QUARTERS.flatMap(quarter => {
+    const cell = quarterCell(focus, quarter);
+    return [cell.demand.max, cell.capacity.max];
+  }));
+  $("#resource-chart").innerHTML = DISPLAY_QUARTERS.map(quarter => {
+    const cell = quarterCell(focus, quarter);
+    return `<div class="resource-column ${cell.state}"><div class="bar-space"><div class="capacity-range" style="height:${cell.capacity.max / max * 100}%" title="Verfügbar ${cell.capacity.min} bis ${cell.capacity.max} PT"></div><div class="demand-range" style="height:${cell.demand.max / max * 100}%" title="Bedarf ${cell.demand.min} bis ${cell.demand.max} PT"></div></div><b class="bar-value">${cell.demand.max || cell.capacity.max ? `${cell.demand.min}–${cell.demand.max} / ${cell.capacity.min}–${cell.capacity.max}` : "–"}</b>${cell.state !== "ok" && cell.worstMonth ? `<span class="gap-label">${monthLabel(cell.worstMonth)}</span>` : ""}<small>${qLabel(quarter)}</small></div>`;
+  }).join("");
+  $("#capacity-count").textContent = capacities().length ? `${capacities().length} verbindliche Monatswerte` : "noch keine Einträge";
+  $("#capacity-list").innerHTML = capacities().length ? capacities().slice().sort((a, b) => String(a.month).localeCompare(String(b.month))).map(item =>
+    `<div class="capacity-list-row" data-edit-capacity="${esc(item.id)}"><div><strong>${esc(item.name)} · ${esc(item.function)}</strong><span>${item.month ? monthLabel(item.month) : `Früher ${esc(item.legacyQuarter)} – Monat neu bestätigen`}</span></div><b>${num(item.min)} bis ${num(item.max)} PT</b><span>›</span></div>`
+  ).join("") : '<div class="empty-note">Noch keine verbindliche Monatsverfügbarkeit erfasst.</div>';
 
-$("#phase-filter").innerHTML+=PHASES.map(p=>`<option value="${p.key}">${p.label}</option>`).join("");$("#f-phase").innerHTML=PHASES.map(p=>`<option value="${p.key}">${p.label}</option>`).join("");$("#c-quarter").innerHTML=quarterOptions("2027-Q1",false);
-[$("#search"),$("#kind-filter"),$("#phase-filter"),$("#only-pressure")].forEach(el=>el.addEventListener("input",renderTimeline));
-$("#timeline").addEventListener("click",e=>{const row=e.target.closest("[data-select]");if(row){selectedId=row.dataset.select;renderTimeline();renderDetail()}});
-$("#project-detail").addEventListener("click",e=>{const edit=e.target.closest("[data-edit-project]");if(edit)openProject(edit.dataset.editProject);const restore=e.target.closest("[data-restore]");if(restore){const baseline=BASELINE.find(x=>x.id===restore.dataset.restore);if(baseline&&confirm("Lokale Planung dieses Projekts verwerfen und auf den Stand der Mutterliste zurücksetzen?")){snapshot("Projektplanung zurückgesetzt");state.projects[state.projects.findIndex(x=>x.id===baseline.id)]=clone(baseline);save();toast("Projektplanung zurückgesetzt")}}const focus=e.target.closest("[data-focus-resource]");if(focus?.dataset.focusResource){$("#resource-focus").value=focus.dataset.focusResource;renderResources();$("#ressourcen").scrollIntoView({behavior:"smooth"})}});
-$("#edit-selected").addEventListener("click",()=>openProject(selectedId));$("#new-project").addEventListener("click",()=>openProject(null,true));$("#expand-long").addEventListener("click",()=>{longOpen=!longOpen;renderLongHorizon()});$$('[data-form-tab]').forEach(b=>b.addEventListener("click",()=>setFormTab(b.dataset.formTab)));
-$("#add-demand").addEventListener("click",()=>{syncEditors();editDemands.push({id:`d-${Date.now()}`,name:"",function:"",phaseKey:$("#f-phase").value,quarter:"2027-Q1",min:"",max:""});renderDemandEditor()});$("#demand-editor").addEventListener("click",e=>{const b=e.target.closest("[data-remove-demand]");if(b){syncEditors();editDemands.splice(Number(b.dataset.removeDemand),1);renderDemandEditor()}});
-$("#add-phase-cost").addEventListener("click",()=>{syncEditors();editPhaseCosts.push({id:`pc-${Date.now()}`,phaseKey:$("#f-phase").value,year:2027,amount:"",status:"estimate"});renderPhaseCostEditor()});$("#phase-cost-editor").addEventListener("click",e=>{const b=e.target.closest("[data-remove-phase-cost]");if(b){syncEditors();editPhaseCosts.splice(Number(b.dataset.removePhaseCost),1);renderPhaseCostEditor()}});
-$("#project-form").addEventListener("submit",e=>{e.preventDefault();syncEditors();const id=$("#project-id").value,existing=state.projects.find(x=>x.id===id);if(editDemands.some(x=>x.max<x.min)){toast("Bei Ressourcen muss PT Maximum mindestens PT Minimum entsprechen");return}const errors=phasePlanIssues({...existing,phasePlan:editPhasePlan});if(errors.some(x=>x.includes("Ende vor Start")||x.includes("Start oder Ende"))){toast(errors[0]);setFormTab("phases");return}const p=normalizeProject({...existing,id,object:$("#f-object").value.trim(),measure:$("#f-measure").value.trim(),kind:$("#f-kind").value,currentPhaseKey:$("#f-phase").value,currentAssignee:$("#f-current-assignee").value,nextDecision:$("#f-next").value.trim(),roles:{gs:$("#f-gs").value||"offen",bk:$("#f-bk").value||"offen",vs:$("#f-vs").value||"nach Bedarf",bhb:$("#f-bhb").value||"offen",control:$("#f-control").value||"offen",deputy:$("#f-deputy").value||"offen"},phasePlan:editPhasePlan,demands:editDemands,phaseCosts:editPhaseCosts,milestones:editMilestones,category:$("#f-kind").value});snapshot(existing?"Projektplanung geändert":"Projekt erstellt");if(existing)state.projects[state.projects.findIndex(x=>x.id===id)]=p;else state.projects.push(p);selectedId=id;save();$("#project-dialog").close();toast("Projektplanung gespeichert")});
-$("#delete-project").addEventListener("click",()=>{const id=$("#project-id").value,p=state.projects.find(x=>x.id===id);if(p&&confirm(`Projekt «${p.object}» aus dem lokalen Arbeitsstand löschen? Die Mutterliste bleibt unverändert.`)){snapshot("Projekt gelöscht");state.projects=state.projects.filter(x=>x.id!==id);if(BASELINE.some(x=>x.id===id))state.deletedIds.push(id);selectedId=state.projects[0]?.id;save();$("#project-dialog").close();toast("Projekt lokal gelöscht")}});
-$("#new-capacity").addEventListener("click",()=>openCapacity());$("#capacity-list").addEventListener("click",e=>{const row=e.target.closest("[data-edit-capacity]");if(row)openCapacity(row.dataset.editCapacity)});$("#resource-focus").addEventListener("change",renderResources);
-$("#capacity-form").addEventListener("submit",e=>{e.preventDefault();const id=$("#c-id").value||`cap-${Date.now()}`,entry={id,name:canonicalResourceName($("#c-name").value),function:$("#c-function").value.trim(),quarter:$("#c-quarter").value,min:num($("#c-min").value),max:num($("#c-max").value),confirmed:true};if(entry.max<entry.min){toast("PT Maximum muss mindestens PT Minimum entsprechen");return}snapshot($("#c-id").value?"Verfügbarkeit geändert":"Verfügbarkeit erfasst");const i=state.capacities.findIndex(x=>x.id===id);if(i>=0)state.capacities[i]=entry;else state.capacities.push(entry);save();$("#capacity-dialog").close();toast("Verfügbarkeit verbindlich übernommen")});
-$("#delete-capacity").addEventListener("click",()=>{const id=$("#c-id").value;if(id&&confirm("Diesen verbindlichen Kapazitätseintrag löschen?")){snapshot("Verfügbarkeit gelöscht");state.capacities=state.capacities.filter(x=>x.id!==id);save();$("#capacity-dialog").close()}});
-$("#undo").addEventListener("click",()=>{const previous=history.pop();if(!previous)return;state=previous.state;localStorage.setItem(HISTORY_KEY,JSON.stringify(history));save();toast(`Rückgängig: ${previous.label}`)});
-$("#reset-all").addEventListener("click",()=>{if(confirm("Alle lokalen Planungen verwerfen und auf den aktuellen Stand der Mutterliste zurücksetzen?")){snapshot("Planung zurückgesetzt");state={projects:clone(BASELINE),capacities:[],deletedIds:[]};selectedId=state.projects[0]?.id;save();toast("Planung zurückgesetzt")}});
-$("#export-projects").addEventListener("click",()=>csv("BGR_BauRadar_Projekte_und_Phasen.csv",[["Projekt ID","Objekt","Projektart","Aktueller Stand Mutterliste","Arbeitsstand","Verantwortung aktuelle Phase","Projektphase","Status","Start","Ende"],...state.projects.flatMap(p=>p.phasePlan.map(row=>[p.id,p.object,p.kind,phaseInfo(p.motherPhaseKey).label,phaseInfo(p.currentPhaseKey).label,p.currentAssignee,phaseInfo(row.phaseKey).label,row.status,row.startQuarter,row.endQuarter]))]));
-$("#export-resources").addEventListener("click",()=>csv("BGR_BauRadar_Ressourcenbedarf.csv",[["Projekt ID","Objekt","Name","Funktion","Projektphase","Quartal","PT Minimum","PT Maximum"],...state.projects.flatMap(p=>p.demands.map(d=>[p.id,p.object,d.name,d.function,phaseInfo(d.phaseKey).label,d.quarter,d.min,d.max]))]));
-$("#export-capacity").addEventListener("click",()=>csv("BGR_BauRadar_Verbindliche_Verfuegbarkeit.csv",[["Name","Funktion","Quartal","PT Minimum","PT Maximum","Bestätigt"],...state.capacities.map(x=>[x.name,x.function,x.quarter,x.min,x.max,"ja"])]));
-$("#export-money").addEventListener("click",()=>csv("BGR_BauRadar_Geld_nach_Projektphase.csv",[["Projekt ID","Objekt","Projektphase","Jahr","Betrag CHF","Qualität"],...state.projects.flatMap(p=>p.phaseCosts.map(x=>[p.id,p.object,phaseInfo(x.phaseKey).label,x.year,x.amount,COST_STATUSES.find(s=>s.key===x.status)?.label||x.status]))]));
-$("#export-changes").addEventListener("click",()=>csv("BGR_BauRadar_Aenderungsprotokoll.csv",[["Typ","Projekt ID","Objekt","Hinweis"],...state.projects.filter(changedProject).map(p=>[BASELINE.some(x=>x.id===p.id)?"geändert":"neu",p.id,p.object,"lokale Planung"]),...state.deletedIds.map(id=>["gelöscht",id,BASELINE.find(x=>x.id===id)?.object||"","nur lokal"]),...state.capacities.map(x=>["Verfügbarkeit","",x.name,`${x.function} · ${x.quarter} · ${x.min} bis ${x.max} PT`]) ]));
+  const active = allResourceMonths();
+  const alerts = active.filter(item => ["gap", "watch", "open"].includes(item.state) && item.demand.max);
+  const openNeeds = unplannedNeeds();
+  const strip = $("#resource-alert");
+  strip.classList.toggle("hidden", !alerts.length && !openNeeds.length);
+  if (alerts.length || openNeeds.length) {
+    const sure = alerts.filter(item => item.state === "gap").length;
+    const possible = alerts.filter(item => item.state === "watch").length;
+    const open = alerts.filter(item => item.state === "open").length;
+    strip.innerHTML = `<strong>${sure ? `${sure} sichere Monatslücken` : "Keine sichere Monatslücke"} · ${openNeeds.length} zeitlich offene Bedarfe</strong><span>${possible} mögliche Lücken · ${open} Monate ohne verbindliche Verfügbarkeit. Nichts wurde automatisch verteilt.</span>`;
+  }
+
+  const quarters = DISPLAY_QUARTERS.filter(quarter => groups.some(group => {
+    const cell = quarterCell(group.key, quarter);
+    return cell.demand.max || cell.capacity.max;
+  }));
+  $("#resource-matrix").innerHTML = groups.length && quarters.length ? `<table class="resource-matrix"><thead><tr><th>Ressource · Bedarf / verfügbar</th>${quarters.map(quarter => `<th>${qLabel(quarter)}</th>`).join("")}</tr></thead><tbody>${groups.map(group => `<tr><td><strong>${esc(group.name)}</strong><small>${esc(group.function || "")}</small></td>${quarters.map(quarter => {
+    const cell = quarterCell(group.key, quarter);
+    return `<td class="matrix-cell ${cell.state}" title="Schlechtester Monatszustand: ${monthLabel(cell.worstMonth)}">${cell.demand.min}–${cell.demand.max}<br><small>${cell.capacity.min}–${cell.capacity.max}</small>${cell.state !== "ok" && cell.worstMonth ? `<b>${monthLabel(cell.worstMonth)}</b>` : ""}</td>`;
+  }).join("")}</tr>`).join("")}</tbody></table>` : '<div class="empty-note">Ressourcenbedarf wird je Projektphase erfasst. Nur ausdrücklich eingetragene Monatswerte fliessen in die Auslastung ein.</div>';
+}
+function allPhaseCosts() {
+  return projects().flatMap(project => project.phaseCosts.map(item => ({ ...item, projectId: project.id, object: project.object })));
+}
+function costForYears(years, statuses = null) {
+  return allPhaseCosts().filter(item => years.includes(Number(item.year)) && (!statuses || statuses.includes(item.status))).reduce((sum, item) => sum + num(item.amount), 0);
+}
+function renderFinance() {
+  const horizons = [
+    { label: "0 bis 1 Jahr", years: [2026, 2027] },
+    { label: "2 bis 3 Jahre", years: [2028, 2029] },
+    { label: "4 bis 10 Jahre", years: [2030, 2031, 2032, 2033, 2034, 2035, 2036] }
+  ];
+  $("#finance-horizons").innerHTML = horizons.map(horizon => {
+    const secured = costForYears(horizon.years, ["approved", "bound"]);
+    const bound = costForYears(horizon.years, ["bound"]);
+    const planning = costForYears(horizon.years, ["estimate", "budgeted"]);
+    return `<article><span>${horizon.label}</span><strong>${chf(secured, true)}</strong><small>freigegeben und gebunden</small><div><b>${chf(bound, true)}</b> gebunden · <b>${chf(planning, true)}</b> Planung</div></article>`;
+  }).join("");
+  const totals = YEARS.map(year => Object.fromEntries(COST_STATUSES.map(status => [status.key, costForYears([year], [status.key])])));
+  const max = Math.max(1, ...totals.map(total => Object.values(total).reduce((a, b) => a + b, 0)));
+  $("#finance-chart").innerHTML = YEARS.map((year, index) => {
+    const total = Object.values(totals[index]).reduce((a, b) => a + b, 0);
+    return `<div class="finance-year"><strong>${total ? chf(total, true) : "–"}</strong><div class="finance-stack" style="height:${total / max * 88}%">${COST_STATUSES.map(status => `<i class="${status.className}" style="height:${total ? totals[index][status.key] / total * 100 : 0}%" title="${status.label}: ${chf(totals[index][status.key])}"></i>`).join("")}</div><span>${year}</span></div>`;
+  }).join("");
+  $("#finance-legend").innerHTML = COST_STATUSES.map(status => `<span><i class="${status.className}"></i>${status.label}</span>`).join("");
+}
+
+function quarterOptions(selected, blank = true) {
+  return `${blank ? '<option value="">noch offen</option>' : ""}${ALL_QUARTERS.map(quarter => `<option value="${quarter}" ${quarter === selected ? "selected" : ""}>${qLabel(quarter)}</option>`).join("")}`;
+}
+function phaseOptions(selected) {
+  return PHASES.map(phase => `<option value="${phase.key}" ${phase.key === selected ? "selected" : ""}>${phase.label}</option>`).join("");
+}
+function options(values, selected, placeholder) {
+  return `${placeholder ? `<option value="">${placeholder}</option>` : ""}${values.map(value => `<option value="${esc(value)}" ${value === selected ? "selected" : ""}>${esc(value)}</option>`).join("")}`;
+}
+function roleOptions(selected = "", placeholder = "Verantwortung wählen") {
+  const value = canonicalResourceName(selected);
+  const legacy = value && !ROLE_OPTIONS.includes(value) ? `<option value="${esc(value)}" selected>${esc(value)} · bestehender Wert</option>` : "";
+  return `<option value="">${placeholder}</option>${legacy}${options(ROLE_OPTIONS, value)}`;
+}
+function capacityResourceOptions(selected = "") {
+  const value = canonicalResourceName(selected);
+  return `<option value="">Ressource wählen</option>${options(CAPACITY_RESOURCES, value)}`;
+}
+function setRoleSelect(selector, value, emptyLabel) {
+  const normalized = canonicalResourceName(value);
+  const isEmpty = ["offen", "nach bedarf", "noch nicht definiert"].includes(normalized.toLowerCase());
+  $(selector).innerHTML = roleOptions(isEmpty ? "" : normalized, emptyLabel);
+}
+function renderPhasePlanEditor() {
+  $("#phase-plan-editor").innerHTML = editPhasePlan.map((row, index) => `<div class="phase-plan-row ${phaseInfo(row.phaseKey).className}" data-phase-plan="${index}"><div><i></i><strong>${phaseInfo(row.phaseKey).label}</strong><span>${index === 1 ? "Danach Entscheid Gesamtvorstand" : index === 3 ? "Danach Projektfreigabe Gesamtvorstand" : "Entscheid im Kompetenzrahmen"}</span></div><label><span>Status</span><select class="pp-status">${options(["open", "planned", "current", "done"], row.status)}</select></label><label><span>Start</span><select class="pp-start">${quarterOptions(row.startQuarter)}</select></label><label><span>Ende</span><select class="pp-end">${quarterOptions(row.endQuarter)}</select></label></div>`).join("");
+}
+function allocationEditor(demand, demandIndex) {
+  return `<div class="allocation-list">${(demand.allocations || []).map((allocation, allocationIndex) => `<div class="allocation-row" data-allocation="${allocationIndex}"><label><span>Monat</span><input class="a-month" type="month" min="2026-01" max="2036-12" value="${esc(allocation.month)}"></label><label><span>PT min.</span><input class="a-min" type="number" min="0" step=".5" value="${esc(allocation.min)}"></label><label><span>PT max.</span><input class="a-max" type="number" min="0" step=".5" value="${esc(allocation.max)}"></label><button type="button" class="remove" data-remove-allocation="${demandIndex}:${allocationIndex}" aria-label="Monatswert löschen">×</button></div>`).join("")}</div><button type="button" class="text-button" data-add-allocation="${demandIndex}">+ Monat bewusst zuordnen</button>`;
+}
+function renderDemandEditor() {
+  $("#demand-editor").innerHTML = editDemands.length ? editDemands.map((demand, index) => {
+    const planning = demandPlanningState(demand);
+    return `<div class="demand-card ${planning.key}" data-demand="${index}">
+      <div class="demand-summary"><label><span>Ressource</span><select class="d-name">${capacityResourceOptions(demand.name)}</select></label><label><span>Funktion</span><input class="d-function" value="${esc(demand.function)}" placeholder="z. B. Projektleitung"></label><label><span>Projektphase</span><select class="d-phase">${phaseOptions(demand.phaseKey)}</select></label><label><span>Gesamt PT min.</span><input class="d-total-min" type="number" min="0" step=".5" value="${esc(demand.totalMin)}"></label><label><span>Gesamt PT max.</span><input class="d-total-max" type="number" min="0" step=".5" value="${esc(demand.totalMax)}"></label><button type="button" class="remove" data-remove-demand="${index}" aria-label="Ressourcenbedarf löschen">×</button></div>
+      <div class="planning-state"><strong>${esc(planning.label)}</strong>${planning.restMin != null ? `<span>Rest: ${planning.restMin} bis ${planning.restMax} PT</span>` : ""}${demand.migrationNote ? `<small>${esc(demand.migrationNote)}</small>` : ""}</div>
+      ${allocationEditor(demand, index)}
+    </div>`;
+  }).join("") : '<div class="empty-note">Noch kein Ressourcenbedarf eingetragen.</div>';
+}
+function renderPhaseCostEditor() {
+  $("#phase-cost-editor").innerHTML = editPhaseCosts.length ? editPhaseCosts.map((item, index) => `<div class="edit-row cost" data-phase-cost="${index}"><label><span>Projektphase</span><select class="pc-phase">${phaseOptions(item.phaseKey)}</select></label><label><span>Jahr</span><select class="pc-year">${YEARS.map(year => `<option ${Number(item.year) === year ? "selected" : ""}>${year}</option>`).join("")}</select></label><label><span>Betrag CHF</span><input class="pc-amount" inputmode="decimal" value="${esc(item.amount)}"></label><label><span>Qualität</span><select class="pc-status">${COST_STATUSES.map(status => `<option value="${status.key}" ${item.status === status.key ? "selected" : ""}>${status.label}</option>`).join("")}</select></label><label><span>Quelle</span><input class="pc-source" value="${esc(item.source || "")}" placeholder="z. B. Offerte"></label><label><span>Informationsdatum</span><input class="pc-date" type="date" value="${esc(item.informationDate || "")}"></label><button type="button" class="remove" data-remove-phase-cost="${index}">×</button></div>`).join("") : '<div class="empty-note">Noch keine Kosten einer Projektphase und einem Jahr zugeordnet.</div>';
+}
+function renderGateEditor() {
+  $("#gate-editor").innerHTML = editGateHistory.length ? editGateHistory.map((gate, index) => {
+    const locked = gate.persisted ? "disabled" : "";
+    return `<div class="gate-history-row" data-gate="${index}"><label><span>Phase</span><select class="g-phase" ${locked}>${phaseOptions(gate.phaseKey)}</select></label><label><span>Entscheid</span><select class="g-status" ${locked}>${options(GATE_STATUSES, gate.status)}</select></label><label><span>Instanz</span><select class="g-authority" ${locked}>${options(GATE_AUTHORITIES, gate.authority)}</select></label><label><span>Datum</span><input class="g-date" type="date" value="${esc(gate.date)}" ${locked}></label><label><span>Kurzbegründung</span><input class="g-reason" value="${esc(gate.reason || "")}" ${locked}></label><label><span>Auflagen</span><input class="g-conditions" value="${esc(gate.conditions || "")}" ${locked}></label><label><span>Nächste Phase</span><select class="g-next" ${locked}><option value="">keine</option>${phaseOptions(gate.nextPhase)}</select></label>${gate.persisted ? '<span class="history-lock">protokolliert</span>' : `<button type="button" class="remove" data-remove-gate="${index}">×</button>`}</div>`;
+  }).join("") : '<div class="empty-note">Noch kein Phasentorentscheid protokolliert.</div>';
+}
+function syncEditors() {
+  editPhasePlan = $$("[data-phase-plan]").map((row, index) => ({
+    ...editPhasePlan[index],
+    status: row.querySelector(".pp-status").value,
+    startQuarter: row.querySelector(".pp-start").value,
+    endQuarter: row.querySelector(".pp-end").value
+  }));
+  editDemands = $$("[data-demand]").map((row, index) => ({
+    ...editDemands[index],
+    id: editDemands[index]?.id || uuid("d"),
+    name: canonicalResourceName(row.querySelector(".d-name").value),
+    function: row.querySelector(".d-function").value.trim(),
+    phaseKey: row.querySelector(".d-phase").value,
+    totalMin: row.querySelector(".d-total-min").value,
+    totalMax: row.querySelector(".d-total-max").value,
+    allocations: [...row.querySelectorAll("[data-allocation]")].map((allocationRow, allocationIndex) => ({
+      id: editDemands[index]?.allocations?.[allocationIndex]?.id || uuid("a"),
+      month: allocationRow.querySelector(".a-month").value,
+      min: allocationRow.querySelector(".a-min").value,
+      max: allocationRow.querySelector(".a-max").value
+    }))
+  }));
+  editPhaseCosts = $$("[data-phase-cost]").map((row, index) => ({
+    id: editPhaseCosts[index]?.id || uuid("pc"),
+    phaseKey: row.querySelector(".pc-phase").value,
+    year: Number(row.querySelector(".pc-year").value),
+    amount: row.querySelector(".pc-amount").value,
+    status: row.querySelector(".pc-status").value,
+    source: row.querySelector(".pc-source").value.trim(),
+    informationDate: row.querySelector(".pc-date").value
+  }));
+  editGateHistory = $$("[data-gate]").map((row, index) => {
+    if (editGateHistory[index]?.persisted) return editGateHistory[index];
+    return {
+      ...editGateHistory[index],
+      id: editGateHistory[index]?.id || uuid("gate"),
+      phaseKey: row.querySelector(".g-phase").value,
+      status: row.querySelector(".g-status").value,
+      authority: row.querySelector(".g-authority").value,
+      date: row.querySelector(".g-date").value,
+      reason: row.querySelector(".g-reason").value.trim(),
+      conditions: row.querySelector(".g-conditions").value.trim(),
+      nextPhase: row.querySelector(".g-next").value
+    };
+  });
+}
+function validateProjectEditors() {
+  const errors = [];
+  for (const demand of editDemands) {
+    const phase = editPhasePlan.find(item => item.phaseKey === demand.phaseKey);
+    errors.push(...validateDemand(demand, phase).map(error => `${demand.name || "Ressource"}: ${error}`));
+    if (demand.totalMin !== "" && demand.totalMax !== "" && num(demand.totalMax) < num(demand.totalMin)) errors.push(`${demand.name}: Gesamtmaximum ist kleiner als Gesamtminimum`);
+    const months = (demand.allocations || []).map(item => item.month).filter(Boolean);
+    if (new Set(months).size !== months.length) errors.push(`${demand.name}: derselbe Monat ist innerhalb der Phase doppelt erfasst`);
+  }
+  for (const cost of editPhaseCosts) {
+    if (cost.amount === "") errors.push("Kostenzeile: Betrag fehlt");
+  }
+  for (const gate of editGateHistory.filter(item => !item.persisted)) {
+    if (!gate.date || !gate.reason) errors.push("Phasentor: Datum und Kurzbegründung sind Pflicht");
+  }
+  return errors;
+}
+function openProject(id, newProject = false) {
+  let project = projects().find(item => item.id === id);
+  if (newProject) project = normalizeProject({
+    id: uuid("project"),
+    object: "",
+    measure: "",
+    kind: "Bauprojekt",
+    phase: "-",
+    motherPhaseKey: "anlass",
+    currentPhaseKey: "anlass",
+    currentAssignee: "",
+    roles: { gs: "offen", bk: "offen", vs: "nach Bedarf", bhb: "offen", control: "offen", deputy: "offen" },
+    cashflow: [],
+    cost: "",
+    nextDecision: ""
+  });
+  if (!project) return;
+  $("#project-id").value = project.id;
+  $("#project-dialog-title").textContent = newProject ? "Neues Projekt" : project.object;
+  $("#mother-state").textContent = phaseInfo(project.motherPhaseKey).label;
+  $("#f-object").value = project.object;
+  $("#f-measure").value = project.measure;
+  $("#f-kind").value = project.kind;
+  $("#f-phase").value = project.currentPhaseKey;
+  $("#f-current-assignee").innerHTML = roleOptions(project.currentAssignee);
+  $("#f-next").value = project.nextDecision || "";
+  setRoleSelect("#f-gs", project.roles.gs, "offen");
+  setRoleSelect("#f-bk", project.roles.bk, "offen");
+  setRoleSelect("#f-vs", project.roles.vs, "nach Bedarf");
+  setRoleSelect("#f-bhb", project.roles.bhb, "offen");
+  setRoleSelect("#f-control", project.roles.control, "offen");
+  setRoleSelect("#f-deputy", project.roles.deputy, "offen");
+  editPhasePlan = clone(project.phasePlan);
+  editDemands = clone(project.demands);
+  editPhaseCosts = clone(project.phaseCosts);
+  editGateHistory = clone(project.gateHistory).map(gate => ({ ...gate, persisted: true }));
+  $("#mother-cost-note").innerHTML = rawMotherCost(project)
+    ? `<strong>Referenz ImmoTool / Excel: ${chf(rawMotherCost(project))}</strong><span>Dieser Referenzwert wird nie automatisch mit den Phasenkosten summiert.</span>`
+    : "<strong>Kein Referenzwert</strong><span>Phasenkosten werden mit Quelle, Informationsdatum und Qualität erfasst.</span>";
+  renderPhasePlanEditor();
+  renderDemandEditor();
+  renderPhaseCostEditor();
+  renderGateEditor();
+  $("#delete-project").classList.toggle("hidden", newProject);
+  setFormTab("base");
+  $("#project-dialog").showModal();
+}
+function setFormTab(name) {
+  $$("[data-form-tab]").forEach(button => button.classList.toggle("active", button.dataset.formTab === name));
+  $$("[data-panel]").forEach(panel => panel.classList.toggle("hidden", panel.dataset.panel !== name));
+}
+function openCapacity(id) {
+  const item = capacities().find(capacity => capacity.id === id) || { id: "", name: "", function: "", month: "", min: "", max: "" };
+  $("#c-id").value = item.id;
+  $("#c-name").innerHTML = capacityResourceOptions(item.name);
+  $("#c-function").value = item.function;
+  $("#c-month").value = item.month || "";
+  $("#c-min").value = item.min;
+  $("#c-max").value = item.max;
+  $("#c-confirmed").checked = Boolean(id && item.month);
+  $("#delete-capacity").classList.toggle("hidden", !id);
+  $("#capacity-dialog").showModal();
+}
+function csv(name, rows) {
+  const content = "\ufeff" + rows.map(row => row.map(value => `"${csvSafe(value).replaceAll('"', '""')}"`).join(";")).join("\n");
+  download(name, content, "text/csv;charset=utf-8");
+}
+
+$("#phase-filter").innerHTML += PHASES.map(phase => `<option value="${phase.key}">${phase.label}</option>`).join("");
+$("#f-phase").innerHTML = PHASES.map(phase => `<option value="${phase.key}">${phase.label}</option>`).join("");
+[$("#search"), $("#kind-filter"), $("#phase-filter"), $("#only-pressure")].forEach(element => element.addEventListener("input", renderTimeline));
+
+$("#workspace-select").addEventListener("change", event => {
+  snapshot("Arbeitsstand gewechselt");
+  if (event.target.value === "sharp") {
+    state.mode = "sharp";
+    state.activeScenarioId = null;
+  } else {
+    state.mode = "scenario";
+    state.activeScenarioId = event.target.value;
+  }
+  selectedId = activeWorkspace().projects[0]?.id;
+  save();
+});
+$("#new-scenario").addEventListener("click", () => {
+  if (state.mode !== "sharp") {
+    toast("Ein neues Szenario wird immer aus dem scharfen Stand erstellt");
+    return;
+  }
+  const name = prompt("Name des neuen Szenarios");
+  if (!name?.trim()) return;
+  const question = prompt("Welche Frage soll dieses Szenario beantworten?") || "";
+  snapshot("Szenario erstellt");
+  const scenario = {
+    id: uuid("scenario"),
+    name: name.trim(),
+    question: question.trim(),
+    createdAt: new Date().toISOString(),
+    baseCreatedAt: new Date().toISOString(),
+    projects: clone(state.projects),
+    capacities: clone(state.capacities),
+    deletedIds: clone(state.deletedIds),
+    auditLog: []
+  };
+  state.scenarios.push(scenario);
+  state.mode = "scenario";
+  state.activeScenarioId = scenario.id;
+  selectedId = scenario.projects[0]?.id;
+  save("Szenario aus scharfem Stand erstellt");
+  toast("Szenario erstellt. Der scharfe Stand bleibt unverändert.");
+});
+
+$("#timeline").addEventListener("click", event => {
+  const row = event.target.closest("[data-select]");
+  if (row) {
+    selectedId = row.dataset.select;
+    renderTimeline();
+    renderDetail();
+  }
+});
+$("#project-detail").addEventListener("click", event => {
+  const edit = event.target.closest("[data-edit-project]");
+  if (edit) openProject(edit.dataset.editProject);
+  const restore = event.target.closest("[data-restore]");
+  if (restore) {
+    const baseline = BASELINE.find(item => item.id === restore.dataset.restore);
+    if (baseline && confirm("Planung dieses Projekts auf den importierten Mutterstand zurücksetzen?")) {
+      snapshot("Projektplanung zurückgesetzt");
+      activeWorkspace().projects[projects().findIndex(item => item.id === baseline.id)] = clone(baseline);
+      save("Projektplanung zurückgesetzt");
+      toast("Projektplanung zurückgesetzt");
+    }
+  }
+  const focus = event.target.closest("[data-focus-resource]");
+  if (focus?.dataset.focusResource) {
+    $("#resource-focus").value = focus.dataset.focusResource;
+    renderResources();
+    $("#ressourcen").scrollIntoView({ behavior: "smooth" });
+  }
+});
+$("#edit-selected").addEventListener("click", () => openProject(selectedId));
+$("#new-project").addEventListener("click", () => openProject(null, true));
+$("#expand-long").addEventListener("click", () => { longOpen = !longOpen; renderLongHorizon(); });
+$$("[data-form-tab]").forEach(button => button.addEventListener("click", () => setFormTab(button.dataset.formTab)));
+
+$("#add-demand").addEventListener("click", () => {
+  syncEditors();
+  editDemands.push({ id: uuid("d"), name: "", function: "", phaseKey: $("#f-phase").value, totalMin: "", totalMax: "", allocations: [] });
+  renderDemandEditor();
+});
+$("#demand-editor").addEventListener("click", event => {
+  const removeDemand = event.target.closest("[data-remove-demand]");
+  const addAllocation = event.target.closest("[data-add-allocation]");
+  const removeAllocation = event.target.closest("[data-remove-allocation]");
+  if (removeDemand) {
+    syncEditors();
+    editDemands.splice(Number(removeDemand.dataset.removeDemand), 1);
+    renderDemandEditor();
+  } else if (addAllocation) {
+    syncEditors();
+    editDemands[Number(addAllocation.dataset.addAllocation)].allocations.push({ id: uuid("a"), month: "", min: "", max: "" });
+    renderDemandEditor();
+  } else if (removeAllocation) {
+    syncEditors();
+    const [demandIndex, allocationIndex] = removeAllocation.dataset.removeAllocation.split(":").map(Number);
+    editDemands[demandIndex].allocations.splice(allocationIndex, 1);
+    renderDemandEditor();
+  }
+});
+$("#demand-editor").addEventListener("change", () => {
+  syncEditors();
+  renderDemandEditor();
+});
+$("#add-phase-cost").addEventListener("click", () => {
+  syncEditors();
+  editPhaseCosts.push({ id: uuid("pc"), phaseKey: $("#f-phase").value, year: 2027, amount: "", status: "estimate", source: "", informationDate: "" });
+  renderPhaseCostEditor();
+});
+$("#phase-cost-editor").addEventListener("click", event => {
+  const button = event.target.closest("[data-remove-phase-cost]");
+  if (button) {
+    syncEditors();
+    editPhaseCosts.splice(Number(button.dataset.removePhaseCost), 1);
+    renderPhaseCostEditor();
+  }
+});
+$("#add-gate").addEventListener("click", () => {
+  syncEditors();
+  editGateHistory.push({ id: uuid("gate"), phaseKey: $("#f-phase").value, status: "freigegeben", authority: "BK", date: "", reason: "", conditions: "", nextPhase: "" });
+  renderGateEditor();
+});
+$("#gate-editor").addEventListener("click", event => {
+  const button = event.target.closest("[data-remove-gate]");
+  if (button) {
+    syncEditors();
+    editGateHistory.splice(Number(button.dataset.removeGate), 1);
+    renderGateEditor();
+  }
+});
+
+$("#project-form").addEventListener("submit", event => {
+  event.preventDefault();
+  syncEditors();
+  const id = $("#project-id").value;
+  const existing = projects().find(item => item.id === id);
+  const phaseErrors = phasePlanIssues({ phasePlan: editPhasePlan });
+  const editorErrors = validateProjectEditors();
+  if (phaseErrors.length || editorErrors.length) {
+    const message = phaseErrors[0] || editorErrors[0];
+    toast(message);
+    setFormTab(phaseErrors.length ? "phases" : "resources");
+    return;
+  }
+  const newGates = editGateHistory.filter(gate => !gate.persisted).map(({ persisted, ...gate }) => gate);
+  const oldGates = editGateHistory.filter(gate => gate.persisted).map(({ persisted, ...gate }) => gate);
+  const project = normalizeProject({
+    ...existing,
+    id,
+    object: $("#f-object").value.trim(),
+    measure: $("#f-measure").value.trim(),
+    kind: $("#f-kind").value,
+    currentPhaseKey: $("#f-phase").value,
+    currentAssignee: $("#f-current-assignee").value,
+    nextDecision: $("#f-next").value.trim(),
+    roles: {
+      gs: $("#f-gs").value || "offen",
+      bk: $("#f-bk").value || "offen",
+      vs: $("#f-vs").value || "nach Bedarf",
+      bhb: $("#f-bhb").value || "offen",
+      control: $("#f-control").value || "offen",
+      deputy: $("#f-deputy").value || "offen"
+    },
+    phasePlan: editPhasePlan,
+    demands: editDemands,
+    phaseCosts: editPhaseCosts,
+    gateHistory: [...oldGates, ...newGates],
+    category: $("#f-kind").value
+  });
+  snapshot(existing ? "Projektplanung geändert" : "Projekt erstellt");
+  if (existing) activeWorkspace().projects[projects().findIndex(item => item.id === id)] = project;
+  else activeWorkspace().projects.push(project);
+  selectedId = id;
+  save(existing ? "Projektplanung geändert" : "Projekt erstellt");
+  $("#project-dialog").close();
+  toast("Projektplanung gespeichert");
+});
+$("#delete-project").addEventListener("click", () => {
+  const id = $("#project-id").value;
+  const project = projects().find(item => item.id === id);
+  if (project && confirm(`Projekt «${project.object}» aus diesem Arbeitsstand löschen?`)) {
+    snapshot("Projekt gelöscht");
+    activeWorkspace().projects = projects().filter(item => item.id !== id);
+    if (BASELINE.some(item => item.id === id)) activeWorkspace().deletedIds.push(id);
+    selectedId = projects()[0]?.id;
+    save("Projekt gelöscht");
+    $("#project-dialog").close();
+  }
+});
+
+$("#new-capacity").addEventListener("click", () => openCapacity());
+$("#capacity-list").addEventListener("click", event => {
+  const row = event.target.closest("[data-edit-capacity]");
+  if (row) openCapacity(row.dataset.editCapacity);
+});
+$("#resource-focus").addEventListener("change", renderResources);
+$("#capacity-form").addEventListener("submit", event => {
+  event.preventDefault();
+  const id = $("#c-id").value || uuid("cap");
+  const entry = {
+    id,
+    name: canonicalResourceName($("#c-name").value),
+    function: $("#c-function").value.trim(),
+    month: $("#c-month").value,
+    min: $("#c-min").value,
+    max: $("#c-max").value,
+    confirmed: true
+  };
+  if (num(entry.max) < num(entry.min)) {
+    toast("PT Maximum muss mindestens PT Minimum entsprechen");
+    return;
+  }
+  const duplicate = capacities().find(item => item.id !== id && resourceKey(item.name) === resourceKey(entry.name) && item.month === entry.month);
+  if (duplicate) {
+    toast(`${entry.name} hat für ${monthLabel(entry.month)} bereits einen Eintrag`);
+    return;
+  }
+  snapshot($("#c-id").value ? "Verfügbarkeit geändert" : "Verfügbarkeit erfasst");
+  const index = capacities().findIndex(item => item.id === id);
+  if (index >= 0) activeWorkspace().capacities[index] = entry;
+  else activeWorkspace().capacities.push(entry);
+  save($("#c-id").value ? "Verfügbarkeit geändert" : "Verfügbarkeit erfasst");
+  $("#capacity-dialog").close();
+  toast("Verfügbarkeit verbindlich übernommen");
+});
+$("#delete-capacity").addEventListener("click", () => {
+  const id = $("#c-id").value;
+  if (id && confirm("Diesen verbindlichen Monatswert löschen?")) {
+    snapshot("Verfügbarkeit gelöscht");
+    activeWorkspace().capacities = capacities().filter(item => item.id !== id);
+    save("Verfügbarkeit gelöscht");
+    $("#capacity-dialog").close();
+  }
+});
+
+$("#undo").addEventListener("click", () => {
+  const previous = history.pop();
+  if (!previous) return;
+  state = previous.state;
+  localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+  localStorage.setItem(STORE_KEY, JSON.stringify(state));
+  selectedId = activeWorkspace().projects[0]?.id;
+  renderAll();
+  toast(`Rückgängig: ${previous.label}`);
+});
+$("#reset-all").addEventListener("click", () => {
+  const confirmation = prompt("Diese Aktion verwirft alle lokalen Planungen. Tippe ZURÜCKSETZEN.");
+  if (confirmation !== "ZURÜCKSETZEN") return;
+  snapshot("Planung zurückgesetzt");
+  state = emptyState();
+  selectedId = state.projects[0]?.id;
+  save("Planung vollständig zurückgesetzt");
+  toast("Planung zurückgesetzt");
+});
+
+$("#export-backup").addEventListener("click", () => {
+  const backup = { product: "BGR BauRadar", exportedAt: new Date().toISOString(), schemaVersion: SCHEMA_VERSION, state };
+  download(`BGR_BauRadar_Vollsicherung_${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(backup, null, 2), "application/json");
+  toast("Vollsicherung heruntergeladen");
+});
+$("#import-backup-button").addEventListener("click", () => $("#import-backup").click());
+$("#import-backup").addEventListener("change", async event => {
+  const file = event.target.files?.[0];
+  if (!file) return;
+  try {
+    const parsed = JSON.parse(await file.text());
+    const source = parsed.state || parsed;
+    if (!Array.isArray(source.projects)) throw new Error("Keine Projekte gefunden");
+    if (!confirm("Die Sicherung ersetzt den aktuellen lokalen Stand. Fortfahren?")) return;
+    snapshot("Vor Import einer Sicherung");
+    const migrated = migrateState(source, BASELINE);
+    state = {
+      ...migrated,
+      projects: migrated.projects.map(normalizeProject),
+      scenarios: (migrated.scenarios || []).map(scenario => ({ ...scenario, ...normalizeWorkspace(scenario) }))
+    };
+    selectedId = activeWorkspace().projects[0]?.id;
+    save("Vollsicherung eingelesen");
+    toast("Sicherung erfolgreich eingelesen");
+  } catch (error) {
+    toast(`Sicherung nicht eingelesen: ${error.message}`);
+  } finally {
+    event.target.value = "";
+  }
+});
+
+$("#export-projects").addEventListener("click", () => csv("BGR_BauRadar_Projekte_und_Phasen.csv", [
+  ["Arbeitsstand", "Projekt ID", "Objekt", "Projektart", "Mutterstand", "Arbeitsstand Phase", "Verantwortung", "Projektphase", "Status", "Start", "Ende"],
+  ...projects().flatMap(project => project.phasePlan.map(row => [state.mode === "scenario" ? activeWorkspace().name : "Scharfer Stand", project.id, project.object, project.kind, phaseInfo(project.motherPhaseKey).label, phaseInfo(project.currentPhaseKey).label, project.currentAssignee, phaseInfo(row.phaseKey).label, row.status, row.startQuarter, row.endQuarter]))
+]));
+$("#export-resources").addEventListener("click", () => csv("BGR_BauRadar_Ressourcenbedarf.csv", [
+  ["Arbeitsstand", "Projekt ID", "Objekt", "Name", "Funktion", "Projektphase", "Gesamt PT min.", "Gesamt PT max.", "Monat", "Monat PT min.", "Monat PT max.", "Zeitlich noch nicht geplant min.", "Zeitlich noch nicht geplant max.", "Planungsstatus"],
+  ...projects().flatMap(project => project.demands.flatMap(demand => {
+    const planning = demandPlanningState(demand);
+    const allocations = demand.allocations?.length ? demand.allocations : [{ month: "", min: "", max: "" }];
+    return allocations.map(allocation => [state.mode === "scenario" ? activeWorkspace().name : "Scharfer Stand", project.id, project.object, demand.name, demand.function, phaseInfo(demand.phaseKey).label, demand.totalMin, demand.totalMax, allocation.month, allocation.min, allocation.max, planning.restMin ?? "", planning.restMax ?? "", planning.label]);
+  }))
+]));
+$("#export-capacity").addEventListener("click", () => csv("BGR_BauRadar_Verbindliche_Verfuegbarkeit.csv", [
+  ["Arbeitsstand", "Name", "Funktion", "Monat", "PT Minimum", "PT Maximum", "Bestätigt"],
+  ...capacities().map(item => [state.mode === "scenario" ? activeWorkspace().name : "Scharfer Stand", item.name, item.function, item.month, item.min, item.max, item.confirmed ? "ja" : "nein"])
+]));
+$("#export-money").addEventListener("click", () => csv("BGR_BauRadar_Geld_nach_Projektphase.csv", [
+  ["Arbeitsstand", "Projekt ID", "Objekt", "Projektphase", "Jahr", "Betrag CHF", "Qualität", "Quelle", "Informationsdatum"],
+  ...projects().flatMap(project => project.phaseCosts.map(item => [state.mode === "scenario" ? activeWorkspace().name : "Scharfer Stand", project.id, project.object, phaseInfo(item.phaseKey).label, item.year, item.amount, COST_STATUSES.find(status => status.key === item.status)?.label || item.status, item.source || "", item.informationDate || ""]))
+]));
+$("#export-changes").addEventListener("click", () => csv("BGR_BauRadar_Aenderungsprotokoll.csv", [
+  ["Zeitpunkt", "Arbeitsstand", "Aktion", "Detail"],
+  ...activeWorkspace().auditLog.map(item => [item.at, state.mode === "scenario" ? activeWorkspace().name : "Scharfer Stand", item.action, item.detail])
+]));
 
 renderAll();
