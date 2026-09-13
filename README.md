@@ -28,6 +28,9 @@ Die langfristige Objekt-, Investitions-, Finanzierungs- und Cashflowplanung blei
 - Die Ampel bezieht sich auf die kritischste zusammenhängende Periode, nicht auf einen erfundenen Monatsbedarf.
 - Grün bedeutet, dass eine tragfähige Verteilung innerhalb der Phasenfenster rechnerisch möglich ist. Orange bedeutet mehr als 80 bis 100 Prozent Beanspruchung. Rot bedeutet, dass keine Verteilung die Lücke lösen kann.
 - Bedarf ohne vollständiges Phasenfenster oder ohne bestätigte Monatskapazitäten bleibt «noch nicht beurteilbar» und kann nie grün werden.
+- Ist erst ein Teil der Monatskapazität bestätigt, zeigt das BauRadar zusätzlich, wie viele PT noch bestätigt werden müssen. Beispiel: 24 PT Restbedarf und 9 bestätigte PT ergeben den Hinweis «15 PT müssen zusätzlich bestätigt werden».
+- Sind alle Monate des Phasenfensters bestätigt und stehen 24 PT Bedarf nur 9 PT Verfügbarkeit gegenüber, wird die Ressourcenlage rot. Die ausgewiesene Mindestlücke beträgt 15 PT.
+- Nach dem Speichern eines Projekts oder einer Jahresverfügbarkeit springt die Oberfläche bei einer Lücke direkt zur betroffenen Ressource und zeigt die Warnung sichtbar an.
 - Iris, Alex, Fabri, TRESTO, Büro 8 und externer Partner sind Kapazitätsressourcen.
 - BK und BHB sind Rollen beziehungsweise Gremien und werden nicht mit Personentagen belastet.
 - Pro Ressource und Monat ist nur ein Verfügbarkeitseintrag erlaubt.
