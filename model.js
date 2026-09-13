@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 4;
+export const SCHEMA_VERSION = 5;
 
 export const CAPACITY_RESOURCES = [
   "Iris",
@@ -18,6 +18,12 @@ export function clone(value) {
 export function numberValue(value) {
   const parsed = Number(String(value ?? "").replace(/[’'\s]/g, "").replace(",", "."));
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+export function nullableNumberValue(value) {
+  if (value === "" || value == null) return null;
+  const parsed = Number(String(value).replace(/[’'\s]/g, "").replace(",", "."));
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 export function resourceKey(name) {
@@ -53,6 +59,17 @@ export function monthIndex(month) {
   return match ? Number(match[1]) * 12 + Number(match[2]) - 1 : Number.NaN;
 }
 
+export function monthFromIndex(index) {
+  return `${Math.floor(index / 12)}-${String(index % 12 + 1).padStart(2, "0")}`;
+}
+
+export function monthsBetween(startMonth, endMonth) {
+  const start = monthIndex(startMonth);
+  const end = monthIndex(endMonth);
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return [];
+  return Array.from({ length: end - start + 1 }, (_, offset) => monthFromIndex(start + offset));
+}
+
 export function monthToQuarter(month) {
   const index = monthIndex(month);
   if (!Number.isFinite(index)) return "";
@@ -66,52 +83,17 @@ export function quarterIndex(quarter) {
   return match ? Number(match[1]) * 4 + Number(match[2]) - 1 : Number.NaN;
 }
 
-export function monthInsidePhase(month, phase) {
-  if (!month || !phase?.startQuarter || !phase?.endQuarter) return false;
-  const quarter = quarterIndex(monthToQuarter(month));
-  return quarter >= quarterIndex(phase.startQuarter) && quarter <= quarterIndex(phase.endQuarter);
-}
-
-export function allocationTotals(demand) {
-  return (demand.allocations || []).reduce(
-    (sum, allocation) => ({
-      min: sum.min + numberValue(allocation.min),
-      max: sum.max + numberValue(allocation.max)
-    }),
-    { min: 0, max: 0 }
-  );
-}
-
-export function demandPlanningState(demand) {
-  const totalMin = demand.totalMin === "" || demand.totalMin == null ? null : numberValue(demand.totalMin);
-  const totalMax = demand.totalMax === "" || demand.totalMax == null ? null : numberValue(demand.totalMax);
-  if (totalMin == null || totalMax == null) return { key: "unestimated", label: "Gesamtbedarf noch nicht geschätzt", restMin: null, restMax: null };
-  const allocated = allocationTotals(demand);
-  const restMin = totalMin - allocated.min;
-  const restMax = totalMax - allocated.max;
-  if (restMin < 0 || restMax < 0) return { key: "overplanned", label: "Überplant – Eingaben prüfen", restMin, restMax };
-  if (!allocated.max && (totalMin || totalMax)) return { key: "unplanned", label: "Zeitlich noch nicht geplant", restMin, restMax };
-  if (restMin || restMax) return { key: "partial", label: "Teilweise geplant", restMin, restMax };
-  return { key: "planned", label: "Vollständig geplant", restMin: 0, restMax: 0 };
-}
-
-export function resourceState(demand, capacity) {
-  if (!numberValue(demand.max)) return "ok";
-  if (!numberValue(capacity.max)) return "open";
-  if (numberValue(demand.max) <= numberValue(capacity.min)) return "ok";
-  if (numberValue(demand.min) > numberValue(capacity.max)) return "gap";
-  return "watch";
-}
-
-export function resourceGap(demand, capacity, state = resourceState(demand, capacity)) {
-  if (state === "gap") {
-    return {
-      min: Math.max(0, numberValue(demand.min) - numberValue(capacity.max)),
-      max: Math.max(0, numberValue(demand.max) - numberValue(capacity.min))
-    };
-  }
-  if (state === "watch") return { min: 0, max: Math.max(0, numberValue(demand.max) - numberValue(capacity.min)) };
-  return { min: 0, max: 0 };
+export function phaseMonthWindow(phase, currentMonth = "") {
+  if (!phase?.startQuarter || !phase?.endQuarter) return { startMonth: "", endMonth: "" };
+  const startMatch = String(phase.startQuarter).match(/^(\d{4})-Q([1-4])$/);
+  const endMatch = String(phase.endQuarter).match(/^(\d{4})-Q([1-4])$/);
+  if (!startMatch || !endMatch) return { startMonth: "", endMonth: "" };
+  const startMonthNumber = (Number(startMatch[2]) - 1) * 3 + 1;
+  const endMonthNumber = Number(endMatch[2]) * 3;
+  let startMonth = `${startMatch[1]}-${String(startMonthNumber).padStart(2, "0")}`;
+  const endMonth = `${endMatch[1]}-${String(endMonthNumber).padStart(2, "0")}`;
+  if (currentMonth && monthIndex(startMonth) < monthIndex(currentMonth) && monthIndex(endMonth) >= monthIndex(currentMonth)) startMonth = currentMonth;
+  return monthIndex(endMonth) < monthIndex(startMonth) ? { startMonth: "", endMonth: "" } : { startMonth, endMonth };
 }
 
 export function csvSafe(value) {
@@ -125,27 +107,46 @@ export function uuid(prefix = "id") {
 }
 
 function migrateLegacyDemand(demand) {
-  if (Array.isArray(demand.allocations)) {
+  const hasCurrentValue = Object.prototype.hasOwnProperty.call(demand, "remainingPt") || Object.prototype.hasOwnProperty.call(demand, "pt");
+  if (hasCurrentValue) {
     return {
       ...demand,
       id: demand.id || uuid("d"),
       name: canonicalResourceName(demand.name),
-      totalMin: demand.totalMin ?? "",
-      totalMax: demand.totalMax ?? "",
-      allocations: demand.allocations.map(item => ({ ...item, id: item.id || uuid("a") }))
+      phaseKey: demand.phaseKey || "anlass",
+      remainingPt: demand.remainingPt ?? demand.pt ?? ""
     };
   }
+  const legacyMin = demand.totalMin ?? demand.min ?? "";
+  const legacyMax = demand.totalMax ?? demand.max ?? "";
+  const legacyAllocations = Array.isArray(demand.allocations) ? demand.allocations : [];
+  const hasLegacyValue = legacyMin !== "" || legacyMax !== "" || legacyAllocations.length > 0;
   return {
     id: demand.id || uuid("d"),
     name: canonicalResourceName(demand.name),
-    function: demand.function || "",
     phaseKey: demand.phaseKey || "anlass",
-    totalMin: demand.min ?? "",
-    totalMax: demand.max ?? "",
-    allocations: [],
-    migrationNote: demand.quarter
-      ? `Früher ${demand.quarter} zugeordnet; bewusst als zeitlich noch nicht geplant übernommen.`
+    remainingPt: "",
+    legacyDemand: hasLegacyValue ? { minimum: legacyMin, maximum: legacyMax, allocations: clone(legacyAllocations) } : null,
+    migrationNote: hasLegacyValue
+      ? `Frühere Bandbreite ${legacyMin || "offen"} bis ${legacyMax || "offen"} PT gesichert. Restbedarf bewusst neu beurteilen.`
       : ""
+  };
+}
+
+function migrateCapacity(capacity) {
+  const hasCurrentValue = Object.prototype.hasOwnProperty.call(capacity, "pt");
+  const legacyMin = capacity.min ?? "";
+  const legacyMax = capacity.max ?? "";
+  return {
+    id: capacity.id || uuid("cap"),
+    name: canonicalResourceName(capacity.name),
+    month: capacity.month || "",
+    pt: hasCurrentValue ? nullableNumberValue(capacity.pt) : null,
+    confirmed: hasCurrentValue ? Boolean(capacity.confirmed) : false,
+    confirmedAt: capacity.confirmedAt || "",
+    legacyQuarter: capacity.month ? "" : (capacity.quarter || capacity.legacyQuarter || ""),
+    legacyCapacity: !hasCurrentValue && (legacyMin !== "" || legacyMax !== "") ? { minimum: legacyMin, maximum: legacyMax } : null,
+    requiresReview: !hasCurrentValue && (legacyMin !== "" || legacyMax !== "" || Boolean(capacity.quarter || capacity.legacyQuarter))
   };
 }
 
@@ -163,29 +164,89 @@ export function migrateState(saved, baselineProjects = []) {
       phaseCosts: Array.isArray(project.phaseCosts) ? project.phaseCosts : [],
       gateHistory: Array.isArray(project.gateHistory) ? project.gateHistory : []
     })),
-    capacities: (Array.isArray(source.capacities) ? source.capacities : []).map(capacity => ({
-      ...capacity,
-      id: capacity.id || uuid("cap"),
-      name: canonicalResourceName(capacity.name),
-      month: capacity.month || "",
-      legacyQuarter: capacity.month ? "" : (capacity.quarter || "")
-    })),
+    capacities: (Array.isArray(source.capacities) ? source.capacities : []).map(migrateCapacity),
     deletedIds: Array.isArray(source.deletedIds) ? source.deletedIds : [],
     auditLog: Array.isArray(source.auditLog) ? source.auditLog : []
   };
 }
 
-export function validateDemand(demand, phase) {
+export function validateDemand(demand) {
   const errors = [];
-  if (!demand.name) errors.push("Ressource fehlt");
-  if (!CAPACITY_RESOURCES.includes(canonicalResourceName(demand.name))) errors.push("BK und BHB sind Rollen, keine Kapazitätsressourcen");
-  if (!demand.function?.trim()) errors.push("Funktion fehlt");
-  const state = demandPlanningState(demand);
-  if (state.key === "overplanned") errors.push("Monatsplanung ist grösser als der Gesamtbedarf");
-  for (const allocation of demand.allocations || []) {
-    if (!allocation.month) errors.push("Monat fehlt");
-    else if (!monthInsidePhase(allocation.month, phase)) errors.push(`${allocation.month} liegt ausserhalb der Projektphase`);
-    if (numberValue(allocation.max) < numberValue(allocation.min)) errors.push(`${allocation.month}: PT Maximum ist kleiner als PT Minimum`);
-  }
+  const name = canonicalResourceName(demand.name);
+  if (!name) errors.push("Ressource fehlt");
+  if (name && !CAPACITY_RESOURCES.includes(name)) errors.push("BK und BHB sind Rollen, keine Kapazitätsressourcen");
+  const pt = nullableNumberValue(demand.remainingPt);
+  if (pt == null) errors.push("Noch benötigte PT fehlen");
+  else if (pt <= 0) errors.push("Noch benötigte PT müssen grösser als 0 sein");
   return errors;
+}
+
+function betterBottleneck(candidate, current) {
+  if (!current) return true;
+  if (candidate.utilization !== current.utilization) return candidate.utilization > current.utilization;
+  return candidate.shortfall > current.shortfall;
+}
+
+export function assessResourceCapacity({ demands = [], capacities = [], threshold = 0.8 } = {}) {
+  const normalizedDemands = demands.map(demand => ({
+    ...demand,
+    pt: nullableNumberValue(demand.pt ?? demand.remainingPt),
+    startMonth: demand.startMonth || "",
+    endMonth: demand.endMonth || ""
+  })).filter(demand => demand.pt != null && demand.pt > 0);
+  const dated = normalizedDemands.filter(demand => {
+    const start = monthIndex(demand.startMonth);
+    const end = monthIndex(demand.endMonth);
+    return Number.isFinite(start) && Number.isFinite(end) && end >= start;
+  });
+  const datedIds = new Set(dated.map(demand => demand.id));
+  const undated = normalizedDemands.filter(demand => !datedIds.has(demand.id));
+  if (!normalizedDemands.length) {
+    return { status: "ok", bottleneck: null, undatedPt: 0, unknownMonths: [], demandCount: 0 };
+  }
+
+  const capacityMap = new Map(capacities.map(item => [item.month, nullableNumberValue(item.pt)]));
+  const relevantMonths = new Set(dated.flatMap(demand => monthsBetween(demand.startMonth, demand.endMonth)));
+  const unknownMonths = [...relevantMonths].filter(month => !capacityMap.has(month) || capacityMap.get(month) == null).sort();
+  let bottleneck = null;
+
+  if (dated.length) {
+    const first = Math.min(...dated.map(demand => monthIndex(demand.startMonth)));
+    const last = Math.max(...dated.map(demand => monthIndex(demand.endMonth)));
+    for (let start = first; start <= last; start += 1) {
+      for (let end = start; end <= last; end += 1) {
+        const contained = dated.filter(demand => monthIndex(demand.startMonth) >= start && monthIndex(demand.endMonth) <= end);
+        if (!contained.length) continue;
+        const months = monthsBetween(monthFromIndex(start), monthFromIndex(end));
+        if (months.some(month => !capacityMap.has(month) || capacityMap.get(month) == null)) continue;
+        const capacity = months.reduce((sum, month) => sum + capacityMap.get(month), 0);
+        const demand = contained.reduce((sum, item) => sum + item.pt, 0);
+        const utilization = capacity > 0 ? demand / capacity : Number.POSITIVE_INFINITY;
+        const candidate = {
+          startMonth: monthFromIndex(start),
+          endMonth: monthFromIndex(end),
+          demand,
+          capacity,
+          utilization,
+          shortfall: Math.max(0, demand - capacity),
+          involvedIds: contained.map(item => item.id)
+        };
+        if (betterBottleneck(candidate, bottleneck)) bottleneck = candidate;
+      }
+    }
+  }
+
+  const undatedPt = undated.reduce((sum, demand) => sum + demand.pt, 0);
+  let status = "ok";
+  if (bottleneck?.utilization > 1) status = "gap";
+  else if (undated.length || unknownMonths.length) status = "open";
+  else if (bottleneck?.utilization > threshold) status = "watch";
+  return {
+    status,
+    bottleneck,
+    undatedPt,
+    undatedIds: undated.map(item => item.id),
+    unknownMonths,
+    demandCount: normalizedDemands.length
+  };
 }
