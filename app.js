@@ -41,7 +41,8 @@ const START_QUARTER = "2026-Q3";
 const DISPLAY_QUARTERS = makeQuarters(START_QUARTER, 12);
 const ALL_QUARTERS = makeQuarters("2026-Q1", 44);
 const YEARS = Array.from({ length: 11 }, (_, index) => 2026 + index);
-const CURRENT_MONTH = new Date().toISOString().slice(0, 7);
+const TODAY = new Date();
+const CURRENT_MONTH = `${TODAY.getFullYear()}-${String(TODAY.getMonth() + 1).padStart(2, "0")}`;
 const RESOURCE_STATUS = {
   ok: { label: "Rechnerisch tragbar", short: "tragbar" },
   watch: { label: "Kapazität knapp", short: "knapp" },
@@ -278,6 +279,7 @@ function projectIssues(project) {
   if (project.kind === "Bauprojekt" && phaseIndex(project.currentPhaseKey) >= 1 && (!project.roles.bhb || project.roles.bhb.toLowerCase() === "offen")) issues.push("Bauherrenbegleitung offen");
   for (const demand of project.demands) {
     const item = allPhaseDemands().find(entry => entry.id === demand.id);
+    if (item?.past) continue;
     if (nullableNumberValue(demand.remainingPt) == null) issues.push(`${demand.name || "Ressource"}: Restbedarf noch nicht erfasst`);
     else if (!item?.startMonth || !item?.endMonth) issues.push(`${demand.name}: ${phaseInfo(demand.phaseKey).short} zeitlich noch nicht beurteilbar`);
     else {
@@ -325,6 +327,7 @@ function allPhaseDemands() {
       pt: nullableNumberValue(demand.remainingPt),
       startMonth: window.startMonth,
       endMonth: window.endMonth,
+      past: Boolean(window.past),
       project,
       phase,
       demand
@@ -333,7 +336,7 @@ function allPhaseDemands() {
 }
 function assessmentForResource(key) {
   return assessResourceCapacity({
-    demands: allPhaseDemands().filter(item => item.resourceKey === key),
+    demands: allPhaseDemands().filter(item => item.resourceKey === key && !item.past),
     capacities: capacities().filter(item => resourceKey(item.name) === key)
   });
 }
@@ -341,6 +344,7 @@ function allResourceAssessments() {
   return resourceGroups().map(group => ({ group, ...assessmentForResource(group.key) }));
 }
 function demandStatus(item) {
+  if (item.past) return "ok";
   if (item.pt == null || item.pt <= 0 || !item.startMonth || !item.endMonth) return "open";
   const assessment = assessmentForResource(item.resourceKey);
   if (assessment.bottleneck?.utilization > 1 && assessment.bottleneck.involvedIds.includes(item.id)) return "gap";
@@ -355,7 +359,7 @@ function phaseResourceStatus(project, phaseKey) {
   return items.map(demandStatus).sort((a, b) => severity[b] - severity[a])[0];
 }
 function unassessedNeeds() {
-  return allPhaseDemands().filter(item => item.pt == null || !item.startMonth || !item.endMonth || demandStatus(item) === "open");
+  return allPhaseDemands().filter(item => !item.past && (item.pt == null || !item.startMonth || !item.endMonth || demandStatus(item) === "open"));
 }
 
 function capacityYearGroups() {
@@ -477,7 +481,8 @@ function renderDetail() {
       <div class="mini-resources">${resources.length ? resources.map(demand => {
         const item = allPhaseDemands().find(entry => entry.id === demand.id);
         const status = item ? demandStatus(item) : "open";
-        return `<div class="mini-resource ${status}"><div><strong>${esc(demand.name)}</strong><span>${phaseInfo(demand.phaseKey).short} · ${esc(RESOURCE_STATUS[status].label)}</span></div><b>${nullableNumberValue(demand.remainingPt) == null ? "offen" : `${num(demand.remainingPt)} PT`}</b></div>`;
+        const statusLabel = item?.past ? "Vergangene Phase, nicht mehr geprüft" : RESOURCE_STATUS[status].label;
+        return `<div class="mini-resource ${status}"><div><strong>${esc(demand.name)}</strong><span>${phaseInfo(demand.phaseKey).short} · ${esc(statusLabel)}</span></div><b>${nullableNumberValue(demand.remainingPt) == null ? "offen" : `${num(demand.remainingPt)} PT`}</b></div>`;
       }).join("") : '<div class="empty-note">Noch kein Ressourcenbedarf eingetragen.</div>'}</div>
       ${issues.length ? `<div class="issue-list">${issues.slice(0, 5).map(issue => `<span>${esc(issue)}</span>`).join("")}</div>` : ""}
       <div class="project-actions"><button class="button primary" data-edit-project="${esc(project.id)}">Projekt planen</button><button class="button ghost" data-focus-resource="${esc(resourceKey(resources[0]?.name || ""))}">Ressourcenwirkung</button></div>
@@ -534,14 +539,17 @@ function renderResources() {
     const status = demandStatus(item);
     const assessment = assessmentForResource(item.resourceKey);
     const itemBottleneck = assessment.bottleneck?.involvedIds.includes(item.id) ? assessment.bottleneck : null;
-    const detail = status === "gap" && itemBottleneck
+    const detail = item.past
+      ? "Die Phase liegt vollständig in der Vergangenheit und wird nicht gegen künftige Kapazität gerechnet."
+      : status === "gap" && itemBottleneck
       ? `${monthLabel(itemBottleneck.startMonth)} bis ${monthLabel(itemBottleneck.endMonth)}: ${itemBottleneck.demand} PT Bedarf, ${itemBottleneck.capacity} PT verfügbar, ${itemBottleneck.shortfall} PT fehlen.`
       : status === "watch" && itemBottleneck
         ? `${monthLabel(itemBottleneck.startMonth)} bis ${monthLabel(itemBottleneck.endMonth)}: ${Math.round(itemBottleneck.utilization * 100)} Prozent beansprucht.`
         : status === "open"
           ? item.pt == null ? "Noch benötigte PT fehlen." : !item.startMonth ? "Die Phase hat noch kein vollständiges Zeitfenster." : "Für benötigte Monate fehlt die bestätigte Verfügbarkeit."
           : "Der Restbedarf ist innerhalb des Phasenfensters rechnerisch tragbar.";
-    return `<tr class="phase-resource-row ${status}" data-edit-project="${esc(item.project.id)}"><td><strong>${esc(item.project.object)}</strong><small>${esc(phaseInfo(item.demand.phaseKey).label)}</small></td><td>${item.startMonth ? `${monthLabel(item.startMonth)} bis ${monthLabel(item.endMonth)}` : "noch offen"}</td><td><strong>${esc(item.name || "offen")}</strong></td><td>${item.pt == null ? "offen" : `${item.pt} PT`}</td><td><span class="resource-status ${status}">${esc(RESOURCE_STATUS[status].label)}</span><small>${esc(detail)}</small></td></tr>`;
+    const statusLabel = item.past ? "Vergangene Phase" : RESOURCE_STATUS[status].label;
+    return `<tr class="phase-resource-row ${status}" data-edit-project="${esc(item.project.id)}"><td><strong>${esc(item.project.object)}</strong><small>${esc(phaseInfo(item.demand.phaseKey).label)}</small></td><td>${item.startMonth ? `${monthLabel(item.startMonth)} bis ${monthLabel(item.endMonth)}` : "noch offen"}</td><td><strong>${esc(item.name || "offen")}</strong></td><td>${item.pt == null ? "offen" : `${item.pt} PT`}</td><td><span class="resource-status ${status}">${esc(statusLabel)}</span><small>${esc(detail)}</small></td></tr>`;
   }).join("")}</tbody></table>` : '<div class="empty-note">Noch kein Restbedarf erfasst. Im Projekt wird je Ressource und Phase genau ein Wert eingetragen.</div>';
 }
 function allPhaseCosts() {
