@@ -92,6 +92,7 @@ export function phaseMonthWindow(phase, currentMonth = "") {
   const endMonthNumber = Number(endMatch[2]) * 3;
   let startMonth = `${startMatch[1]}-${String(startMonthNumber).padStart(2, "0")}`;
   const endMonth = `${endMatch[1]}-${String(endMonthNumber).padStart(2, "0")}`;
+  if (currentMonth && monthIndex(endMonth) < monthIndex(currentMonth)) return { startMonth, endMonth, past: true };
   if (currentMonth && monthIndex(startMonth) < monthIndex(currentMonth) && monthIndex(endMonth) >= monthIndex(currentMonth)) startMonth = currentMonth;
   return monthIndex(endMonth) < monthIndex(startMonth) ? { startMonth: "", endMonth: "" } : { startMonth, endMonth };
 }
