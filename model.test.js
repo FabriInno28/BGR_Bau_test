@@ -88,6 +88,29 @@ test("die engste bindende Periode wird benannt", () => {
   assert.equal(result.bottleneck.utilization, 0.9);
 });
 
+test("Fabri mit 9 PT Verfügbarkeit gegen 24 PT Restbedarf wird klar rot", () => {
+  const result = assessResourceCapacity({
+    demands: [{ id: "fabri-umbau", pt: 24, startMonth: "2026-09", endMonth: "2026-12" }],
+    capacities: capacities({ "2026-09": 9, "2026-10": 0, "2026-11": 0, "2026-12": 0 })
+  });
+  assert.equal(result.status, "gap");
+  assert.equal(result.bottleneck.demand, 24);
+  assert.equal(result.bottleneck.capacity, 9);
+  assert.equal(result.bottleneck.shortfall, 15);
+});
+
+test("Fabri mit erst 9 bestätigten PT erhält trotz offener Monate eine starke Warnung", () => {
+  const result = assessResourceCapacity({
+    demands: [{ id: "fabri-umbau", pt: 24, startMonth: "2026-09", endMonth: "2026-12" }],
+    capacities: capacities({ "2026-09": 9 })
+  });
+  assert.equal(result.status, "open");
+  assert.equal(result.confirmation.demand, 24);
+  assert.equal(result.confirmation.capacity, 9);
+  assert.equal(result.confirmation.unconfirmedNeeded, 15);
+  assert.deepEqual(result.confirmation.unknownMonths, ["2026-10", "2026-11", "2026-12"]);
+});
+
 test("laufende Phase beginnt für den Restbedarf im aktuellen Monat", () => {
   assert.deepEqual(
     phaseMonthWindow({ startQuarter: "2026-Q1", endQuarter: "2026-Q4" }, "2026-09"),
