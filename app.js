@@ -39,6 +39,7 @@ const COST_STATUSES = [
 
 const GATE_STATUSES = ["freigegeben", "mit Auflagen", "zurückgestellt", "gestoppt"];
 const GATE_AUTHORITIES = ["BK", "BHB", "Gesamtvorstand", "Geschäftsstelle"];
+const MONTH_NAMES = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"];
 const START_QUARTER = "2026-Q3";
 const DISPLAY_QUARTERS = makeQuarters(START_QUARTER, 12);
 const ALL_QUARTERS = makeQuarters("2026-Q1", 44);
@@ -135,7 +136,11 @@ function normalizeProject(project) {
   return {
     ...clone(project),
     ...migrated,
-    kind: project.kind || inferKind(project),
+    kind: ["Kleinprojekt", "Bauprojekt"].includes(project.kind)
+      ? project.kind
+      : project.category === "Bauprojekt"
+        ? "Bauprojekt"
+        : inferKind(project),
     motherPhaseKey,
     currentPhaseKey,
     currentAssignee: ROLE_OPTIONS.includes(inferredAssignee) ? inferredAssignee : "",
@@ -350,6 +355,24 @@ function unplannedNeeds() {
     .filter(item => ["unestimated", "unplanned", "partial", "overplanned"].includes(item.planning.key));
 }
 
+function capacityYearGroups() {
+  const groups = new Map();
+  capacities().forEach(item => {
+    const year = item.month?.slice(0, 4) || item.legacyQuarter?.slice(0, 4) || "offen";
+    const key = `${resourceKey(item.name)}-${year}`;
+    if (!groups.has(key)) groups.set(key, { firstId: item.id, name: item.name, function: item.function, year, rows: [], legacy: false });
+    const group = groups.get(key);
+    group.rows.push(item);
+    group.legacy ||= !item.month;
+  });
+  return [...groups.values()].map(group => ({
+    ...group,
+    months: group.rows.filter(item => item.month).length,
+    min: group.rows.filter(item => item.month).reduce((sum, item) => sum + num(item.min), 0),
+    max: group.rows.filter(item => item.month).reduce((sum, item) => sum + num(item.max), 0)
+  })).sort((a, b) => a.name.localeCompare(b.name, "de") || String(a.year).localeCompare(String(b.year)));
+}
+
 function renderAll() {
   renderHeader();
   renderTimeline();
@@ -470,10 +493,11 @@ function renderResources() {
     const cell = quarterCell(focus, quarter);
     return `<div class="resource-column ${cell.state}"><div class="bar-space"><div class="capacity-range" style="height:${cell.capacity.max / max * 100}%" title="Verfügbar ${cell.capacity.min} bis ${cell.capacity.max} PT"></div><div class="demand-range" style="height:${cell.demand.max / max * 100}%" title="Bedarf ${cell.demand.min} bis ${cell.demand.max} PT"></div></div><b class="bar-value">${cell.demand.max || cell.capacity.max ? `${cell.demand.min}–${cell.demand.max} / ${cell.capacity.min}–${cell.capacity.max}` : "–"}</b>${cell.state !== "ok" && cell.worstMonth ? `<span class="gap-label">${monthLabel(cell.worstMonth)}</span>` : ""}<small>${qLabel(quarter)}</small></div>`;
   }).join("");
-  $("#capacity-count").textContent = capacities().length ? `${capacities().length} verbindliche Monatswerte` : "noch keine Einträge";
-  $("#capacity-list").innerHTML = capacities().length ? capacities().slice().sort((a, b) => String(a.month).localeCompare(String(b.month))).map(item =>
-    `<div class="capacity-list-row" data-edit-capacity="${esc(item.id)}"><div><strong>${esc(item.name)} · ${esc(item.function)}</strong><span>${item.month ? monthLabel(item.month) : `Früher ${esc(item.legacyQuarter)} – Monat neu bestätigen`}</span></div><b>${num(item.min)} bis ${num(item.max)} PT</b><span>›</span></div>`
-  ).join("") : '<div class="empty-note">Noch keine verbindliche Monatsverfügbarkeit erfasst.</div>';
+  const capacityPlans = capacityYearGroups();
+  $("#capacity-count").textContent = capacityPlans.length ? `${capacityPlans.length} Jahresplanungen` : "noch keine Einträge";
+  $("#capacity-list").innerHTML = capacityPlans.length ? capacityPlans.map(plan =>
+    `<div class="capacity-list-row" data-edit-capacity="${esc(plan.firstId)}"><div><strong>${esc(plan.name)} · ${esc(plan.year)}</strong><span>${esc(plan.function || "Funktion offen")} · ${plan.months} von 12 Monaten erfasst${plan.legacy ? " · frühere Quartalswerte neu bestätigen" : ""}</span></div><b>${plan.min} bis ${plan.max} PT</b><span>›</span></div>`
+  ).join("") : '<div class="empty-note">Noch keine verbindliche Jahresverfügbarkeit erfasst.</div>';
 
   const active = allResourceMonths();
   const alerts = active.filter(item => ["gap", "watch", "open"].includes(item.state) && item.demand.max);
@@ -657,6 +681,7 @@ function openProject(id, newProject = false) {
   $("#f-object").value = project.object;
   $("#f-measure").value = project.measure;
   $("#f-kind").value = project.kind;
+  renderProjectTypeGuidance();
   $("#f-phase").value = project.currentPhaseKey;
   $("#f-current-assignee").innerHTML = roleOptions(project.currentAssignee);
   $("#f-next").value = project.nextDecision || "";
@@ -685,16 +710,30 @@ function setFormTab(name) {
   $$("[data-form-tab]").forEach(button => button.classList.toggle("active", button.dataset.formTab === name));
   $$("[data-panel]").forEach(panel => panel.classList.toggle("hidden", panel.dataset.panel !== name));
 }
+function renderProjectTypeGuidance() {
+  const selected = $("#f-kind").value;
+  $$('[data-project-type]').forEach(card => card.classList.toggle("active", card.dataset.projectType === selected));
+}
+function renderCapacityYearGrid() {
+  const name = canonicalResourceName($("#c-name").value);
+  const year = $("#c-year").value;
+  const existing = new Map(capacities().filter(item => resourceKey(item.name) === resourceKey(name) && item.month?.startsWith(`${year}-`)).map(item => [item.month, item]));
+  $("#capacity-year-grid").innerHTML = MONTH_NAMES.map((label, index) => {
+    const month = `${year}-${String(index + 1).padStart(2, "0")}`;
+    const item = existing.get(month);
+    return `<article class="capacity-month" data-capacity-month="${month}"><strong>${label}</strong><label><span>PT min.</span><input class="cy-min" type="number" min="0" step=".5" value="${esc(item?.min ?? "")}" inputmode="decimal"></label><label><span>PT max.</span><input class="cy-max" type="number" min="0" step=".5" value="${esc(item?.max ?? "")}" inputmode="decimal"></label></article>`;
+  }).join("");
+  const hasYear = capacities().some(item => resourceKey(item.name) === resourceKey(name) && (item.month?.startsWith(`${year}-`) || item.legacyQuarter?.startsWith(`${year}-`)));
+  $("#delete-capacity").classList.toggle("hidden", !hasYear);
+}
 function openCapacity(id) {
   const item = capacities().find(capacity => capacity.id === id) || { id: "", name: "", function: "", month: "", min: "", max: "" };
-  $("#c-id").value = item.id;
   $("#c-name").innerHTML = capacityResourceOptions(item.name);
   $("#c-function").value = item.function;
-  $("#c-month").value = item.month || "";
-  $("#c-min").value = item.min;
-  $("#c-max").value = item.max;
-  $("#c-confirmed").checked = Boolean(id && item.month);
-  $("#delete-capacity").classList.toggle("hidden", !id);
+  const selectedYear = item.month?.slice(0, 4) || item.legacyQuarter?.slice(0, 4) || String(new Date().getFullYear());
+  $("#c-year").innerHTML = YEARS.map(year => `<option value="${year}" ${String(year) === selectedYear ? "selected" : ""}>${year}</option>`).join("");
+  $("#c-confirmed").checked = false;
+  renderCapacityYearGrid();
   $("#capacity-dialog").showModal();
 }
 function csv(name, rows) {
@@ -776,6 +815,7 @@ $("#project-detail").addEventListener("click", event => {
 });
 $("#edit-selected").addEventListener("click", () => openProject(selectedId));
 $("#new-project").addEventListener("click", () => openProject(null, true));
+$("#f-kind").addEventListener("change", renderProjectTypeGuidance);
 $("#expand-long").addEventListener("click", () => { longOpen = !longOpen; renderLongHorizon(); });
 $$("[data-form-tab]").forEach(button => button.addEventListener("click", () => setFormTab(button.dataset.formTab)));
 
@@ -899,41 +939,65 @@ $("#capacity-list").addEventListener("click", event => {
   if (row) openCapacity(row.dataset.editCapacity);
 });
 $("#resource-focus").addEventListener("change", renderResources);
+$("#c-name").addEventListener("change", () => {
+  const first = capacities().find(item => resourceKey(item.name) === resourceKey($("#c-name").value));
+  if (first && !$("#c-function").value) $("#c-function").value = first.function || "";
+  renderCapacityYearGrid();
+});
+$("#c-year").addEventListener("change", renderCapacityYearGrid);
 $("#capacity-form").addEventListener("submit", event => {
   event.preventDefault();
-  const id = $("#c-id").value || uuid("cap");
-  const entry = {
-    id,
-    name: canonicalResourceName($("#c-name").value),
-    function: $("#c-function").value.trim(),
-    month: $("#c-month").value,
-    min: $("#c-min").value,
-    max: $("#c-max").value,
+  const name = canonicalResourceName($("#c-name").value);
+  const functionName = $("#c-function").value.trim();
+  const year = $("#c-year").value;
+  const existing = new Map(capacities().filter(item => resourceKey(item.name) === resourceKey(name) && item.month?.startsWith(`${year}-`)).map(item => [item.month, item]));
+  const rows = $$('[data-capacity-month]').map(card => ({
+    month: card.dataset.capacityMonth,
+    min: card.querySelector(".cy-min").value,
+    max: card.querySelector(".cy-max").value
+  }));
+  for (const row of rows) {
+    const hasMin = row.min !== "";
+    const hasMax = row.max !== "";
+    if (hasMin !== hasMax) {
+      toast(`${monthLabel(row.month)}: Minimum und Maximum gemeinsam ausfüllen`);
+      return;
+    }
+    if (hasMin && num(row.max) < num(row.min)) {
+      toast(`${monthLabel(row.month)}: Maximum muss mindestens dem Minimum entsprechen`);
+      return;
+    }
+  }
+  const filled = rows.filter(row => row.min !== "" && row.max !== "");
+  const previousCount = capacities().filter(item => resourceKey(item.name) === resourceKey(name) && (item.month?.startsWith(`${year}-`) || item.legacyQuarter?.startsWith(`${year}-`))).length;
+  if (!filled.length && !previousCount) {
+    toast("Bitte mindestens einen Monat erfassen");
+    return;
+  }
+  if (filled.length < previousCount && !confirm(`${previousCount - filled.length} bisherige Monatswerte werden entfernt. Fortfahren?`)) return;
+  snapshot(previousCount ? "Jahresverfügbarkeit geändert" : "Jahresverfügbarkeit erfasst");
+  const untouched = capacities().filter(item => !(resourceKey(item.name) === resourceKey(name) && (item.month?.startsWith(`${year}-`) || item.legacyQuarter?.startsWith(`${year}-`))));
+  const annualValues = filled.map(row => ({
+    id: existing.get(row.month)?.id || uuid("cap"),
+    name,
+    function: functionName,
+    month: row.month,
+    min: row.min,
+    max: row.max,
     confirmed: true
-  };
-  if (num(entry.max) < num(entry.min)) {
-    toast("PT Maximum muss mindestens PT Minimum entsprechen");
-    return;
-  }
-  const duplicate = capacities().find(item => item.id !== id && resourceKey(item.name) === resourceKey(entry.name) && item.month === entry.month);
-  if (duplicate) {
-    toast(`${entry.name} hat für ${monthLabel(entry.month)} bereits einen Eintrag`);
-    return;
-  }
-  snapshot($("#c-id").value ? "Verfügbarkeit geändert" : "Verfügbarkeit erfasst");
-  const index = capacities().findIndex(item => item.id === id);
-  if (index >= 0) activeWorkspace().capacities[index] = entry;
-  else activeWorkspace().capacities.push(entry);
-  save($("#c-id").value ? "Verfügbarkeit geändert" : "Verfügbarkeit erfasst");
+  }));
+  activeWorkspace().capacities = [...untouched, ...annualValues];
+  save(previousCount ? "Jahresverfügbarkeit geändert" : "Jahresverfügbarkeit erfasst");
   $("#capacity-dialog").close();
-  toast("Verfügbarkeit verbindlich übernommen");
+  toast(`${filled.length} Monatswerte für ${year} gespeichert`);
 });
 $("#delete-capacity").addEventListener("click", () => {
-  const id = $("#c-id").value;
-  if (id && confirm("Diesen verbindlichen Monatswert löschen?")) {
-    snapshot("Verfügbarkeit gelöscht");
-    activeWorkspace().capacities = capacities().filter(item => item.id !== id);
-    save("Verfügbarkeit gelöscht");
+  const name = canonicalResourceName($("#c-name").value);
+  const year = $("#c-year").value;
+  if (name && confirm(`Alle Verfügbarkeitswerte von ${name} für ${year} löschen?`)) {
+    snapshot("Jahresverfügbarkeit gelöscht");
+    activeWorkspace().capacities = capacities().filter(item => !(resourceKey(item.name) === resourceKey(name) && (item.month?.startsWith(`${year}-`) || item.legacyQuarter?.startsWith(`${year}-`))));
+    save("Jahresverfügbarkeit gelöscht");
     $("#capacity-dialog").close();
   }
 });
