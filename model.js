@@ -188,6 +188,13 @@ function betterBottleneck(candidate, current) {
   return candidate.shortfall > current.shortfall;
 }
 
+function betterConfirmation(candidate, current) {
+  if (!current) return true;
+  if (candidate.unconfirmedNeeded !== current.unconfirmedNeeded) return candidate.unconfirmedNeeded > current.unconfirmedNeeded;
+  if (candidate.demand !== current.demand) return candidate.demand > current.demand;
+  return candidate.unknownMonths.length < current.unknownMonths.length;
+}
+
 export function assessResourceCapacity({ demands = [], capacities = [], threshold = 0.8 } = {}) {
   const normalizedDemands = demands.map(demand => ({
     ...demand,
@@ -203,13 +210,14 @@ export function assessResourceCapacity({ demands = [], capacities = [], threshol
   const datedIds = new Set(dated.map(demand => demand.id));
   const undated = normalizedDemands.filter(demand => !datedIds.has(demand.id));
   if (!normalizedDemands.length) {
-    return { status: "ok", bottleneck: null, undatedPt: 0, unknownMonths: [], demandCount: 0 };
+    return { status: "ok", bottleneck: null, confirmation: null, undatedPt: 0, unknownMonths: [], demandCount: 0 };
   }
 
   const capacityMap = new Map(capacities.map(item => [item.month, nullableNumberValue(item.pt)]));
   const relevantMonths = new Set(dated.flatMap(demand => monthsBetween(demand.startMonth, demand.endMonth)));
   const unknownMonths = [...relevantMonths].filter(month => !capacityMap.has(month) || capacityMap.get(month) == null).sort();
   let bottleneck = null;
+  let confirmation = null;
 
   if (dated.length) {
     const first = Math.min(...dated.map(demand => monthIndex(demand.startMonth)));
@@ -219,9 +227,22 @@ export function assessResourceCapacity({ demands = [], capacities = [], threshol
         const contained = dated.filter(demand => monthIndex(demand.startMonth) >= start && monthIndex(demand.endMonth) <= end);
         if (!contained.length) continue;
         const months = monthsBetween(monthFromIndex(start), monthFromIndex(end));
-        if (months.some(month => !capacityMap.has(month) || capacityMap.get(month) == null)) continue;
-        const capacity = months.reduce((sum, month) => sum + capacityMap.get(month), 0);
+        const periodUnknownMonths = months.filter(month => !capacityMap.has(month) || capacityMap.get(month) == null);
+        const capacity = months.reduce((sum, month) => sum + (capacityMap.get(month) ?? 0), 0);
         const demand = contained.reduce((sum, item) => sum + item.pt, 0);
+        if (periodUnknownMonths.length) {
+          const candidate = {
+            startMonth: monthFromIndex(start),
+            endMonth: monthFromIndex(end),
+            demand,
+            capacity,
+            unconfirmedNeeded: Math.max(0, demand - capacity),
+            unknownMonths: periodUnknownMonths,
+            involvedIds: contained.map(item => item.id)
+          };
+          if (betterConfirmation(candidate, confirmation)) confirmation = candidate;
+          continue;
+        }
         const utilization = capacity > 0 ? demand / capacity : Number.POSITIVE_INFINITY;
         const candidate = {
           startMonth: monthFromIndex(start),
@@ -245,6 +266,7 @@ export function assessResourceCapacity({ demands = [], capacities = [], threshol
   return {
     status,
     bottleneck,
+    confirmation,
     undatedPt,
     undatedIds: undated.map(item => item.id),
     unknownMonths,
