@@ -49,6 +49,12 @@ const RESOURCE_STATUS = {
   gap: { label: "Nicht gemeinsam tragbar", short: "nicht tragbar" },
   open: { label: "Noch nicht beurteilbar", short: "ungeklärt" }
 };
+const PHASE_STATUS = {
+  open: "Offen",
+  planned: "Geplant",
+  current: "Aktuell",
+  done: "Abgeschlossen"
+};
 const STORE_KEY = "bgr-bauradar-v5";
 const PREVIOUS_STORE_KEY = "bgr-bauradar-v4";
 const LEGACY_STORE_KEY = "bgr-portfolio-cockpit-v3";
@@ -238,12 +244,12 @@ function download(name, content, type) {
   link.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
-function toast(message) {
+function toast(message, type = "", duration = 3000) {
   const element = $("#toast");
   element.textContent = message;
-  element.classList.add("show");
+  element.className = `toast show ${type}`.trim();
   clearTimeout(toast.timer);
-  toast.timer = setTimeout(() => element.classList.remove("show"), 3000);
+  toast.timer = setTimeout(() => element.classList.remove("show"), duration);
 }
 
 let state = loadState();
@@ -339,6 +345,42 @@ function assessmentForResource(key) {
     demands: allPhaseDemands().filter(item => item.resourceKey === key && !item.past),
     capacities: capacities().filter(item => resourceKey(item.name) === key)
   });
+}
+function assessmentLabel(assessment) {
+  return assessment.status === "open" && assessment.confirmation?.unconfirmedNeeded > 0
+    ? "Kapazität nicht abgesichert"
+    : RESOURCE_STATUS[assessment.status].label;
+}
+function assessmentWarning(name, assessment) {
+  if (assessment.status === "gap" && assessment.bottleneck) {
+    return {
+      type: "gap",
+      message: `${name}: ${assessment.bottleneck.demand} PT Bedarf, ${assessment.bottleneck.capacity} PT verfügbar. ${assessment.bottleneck.shortfall} PT fehlen.`
+    };
+  }
+  if (assessment.status === "open" && assessment.confirmation?.unconfirmedNeeded > 0) {
+    return {
+      type: "warning",
+      message: `${name}: ${assessment.confirmation.demand} PT Bedarf, erst ${assessment.confirmation.capacity} PT bestätigt. ${assessment.confirmation.unconfirmedNeeded} PT müssen zusätzlich bestätigt werden.`
+    };
+  }
+  return null;
+}
+function focusResourceWarning(name, project = null) {
+  const key = resourceKey(name);
+  const projectItems = project
+    ? allPhaseDemands().filter(entry => entry.project.id === project.id && entry.resourceKey === key && !entry.past)
+    : [];
+  const assessment = assessmentForResource(key);
+  const warning = assessmentWarning(name, assessment);
+  const involvedIds = assessment.bottleneck?.involvedIds || assessment.confirmation?.involvedIds || [];
+  const involved = warning && (!project || projectItems.some(item => involvedIds.includes(item.id)));
+  if (!warning || !involved) return false;
+  $("#resource-focus").value = key;
+  renderResources();
+  $("#ressourcen").scrollIntoView({ behavior: "smooth", block: "start" });
+  toast(warning.message, warning.type, 9000);
+  return true;
 }
 function allResourceAssessments() {
   return resourceGroups().map(group => ({ group, ...assessmentForResource(group.key) }));
@@ -499,22 +541,27 @@ function renderResources() {
   const focusAssessment = assessmentForResource(focus);
   const focusedDemands = allPhaseDemands().filter(item => item.resourceKey === focus && item.pt != null && item.pt > 0);
   const bottleneck = focusAssessment.bottleneck;
-  const period = bottleneck ? `${monthLabel(bottleneck.startMonth)} bis ${monthLabel(bottleneck.endMonth)}` : "Noch kein prüfbarer Zeitraum";
+  const confirmation = focusAssessment.confirmation;
+  const evidence = bottleneck || confirmation;
+  const period = evidence ? `${monthLabel(evidence.startMonth)} bis ${monthLabel(evidence.endMonth)}` : "Noch kein prüfbarer Zeitraum";
   const utilization = bottleneck ? (Number.isFinite(bottleneck.utilization) ? `${Math.round(bottleneck.utilization * 100)} %` : "über 100 %") : "offen";
   const explanation = focusAssessment.status === "gap"
     ? `In dieser Periode fehlen mindestens ${bottleneck.shortfall} PT. Keine Verteilung innerhalb der Phasenfenster kann diese Lücke lösen.`
     : focusAssessment.status === "watch"
       ? "Die gemeinsame Beanspruchung liegt über 80 Prozent. Die Phasen sind rechnerisch tragbar, aber ohne ausreichende Reserve."
+      : focusAssessment.status === "open" && confirmation?.unconfirmedNeeded > 0
+        ? `Die Phase ist noch nicht freigabefähig. ${confirmation.demand} PT Bedarf stehen erst ${confirmation.capacity} bestätigte PT gegenüber. ${confirmation.unconfirmedNeeded} PT zusätzliche Kapazität müssen bestätigt werden. Für ${confirmation.unknownMonths.length} Monate fehlen noch Angaben.`
       : focusAssessment.status === "open"
         ? `${focusAssessment.undatedPt ? `${focusAssessment.undatedPt} PT haben noch kein prüfbares Phasenfenster. ` : ""}${focusAssessment.unknownMonths.length ? `Für ${focusAssessment.unknownMonths.length} benötigte Monate fehlt eine bestätigte Verfügbarkeit.` : ""}`
         : focusedDemands.length
           ? "Der gesamte Restbedarf findet innerhalb der geplanten Phasenfenster rechnerisch Platz. Es wurde keine Monatsverteilung erzeugt."
           : "Für diese Ressource ist noch kein Restbedarf erfasst.";
-  const involved = bottleneck ? focusedDemands.filter(item => bottleneck.involvedIds.includes(item.id)) : [];
-  $("#resource-chart").innerHTML = `<div class="resource-assessment ${focusAssessment.status}">
-    <div class="assessment-head"><span class="status-dot"></span><div><small>Gesamtstatus ${esc(groups.find(group => group.key === focus)?.name || "Ressource")}</small><strong>${esc(RESOURCE_STATUS[focusAssessment.status].label)}</strong></div></div>
+  const involved = evidence ? focusedDemands.filter(item => evidence.involvedIds.includes(item.id)) : [];
+  const unsecured = focusAssessment.status === "open" && confirmation?.unconfirmedNeeded > 0;
+  $("#resource-chart").innerHTML = `<div class="resource-assessment ${focusAssessment.status} ${unsecured ? "unsecured" : ""}">
+    <div class="assessment-head"><span class="status-dot"></span><div><small>Gesamtstatus ${esc(groups.find(group => group.key === focus)?.name || "Ressource")}</small><strong>${esc(assessmentLabel(focusAssessment))}</strong></div></div>
     <p>${esc(explanation)}</p>
-    ${bottleneck ? `<div class="assessment-numbers"><div><span>Kritischer Zeitraum</span><strong>${esc(period)}</strong></div><div><span>Gemeinsamer Bedarf</span><strong>${bottleneck.demand} PT</strong></div><div><span>Verfügbarkeit</span><strong>${bottleneck.capacity} PT</strong></div><div><span>Beanspruchung</span><strong>${utilization}</strong></div></div>` : ""}
+    ${evidence ? `<div class="assessment-numbers"><div><span>Kritischer Zeitraum</span><strong>${esc(period)}</strong></div><div><span>Gemeinsamer Bedarf</span><strong>${evidence.demand} PT</strong></div><div><span>${bottleneck ? "Verfügbarkeit" : "Bisher bestätigt"}</span><strong>${evidence.capacity} PT</strong></div><div><span>${bottleneck ? "Beanspruchung" : "Noch zu bestätigen"}</span><strong>${bottleneck ? utilization : `${confirmation.unconfirmedNeeded} PT`}</strong></div></div>` : ""}
     ${involved.length ? `<div class="involved-phases"><span>Beteiligte Phasen</span>${involved.map(item => `<button type="button" data-edit-project="${esc(item.project.id)}"><strong>${esc(item.project.object)}</strong><small>${esc(phaseInfo(item.demand.phaseKey).label)} · ${item.pt} PT</small></button>`).join("")}</div>` : ""}
   </div>`;
   const capacityPlans = capacityYearGroups();
@@ -525,13 +572,17 @@ function renderResources() {
 
   const assessments = allResourceAssessments();
   const alerts = assessments.filter(item => ["gap", "watch"].includes(item.status));
+  const unsecuredAssessments = assessments.filter(item => item.status === "open" && item.confirmation?.unconfirmedNeeded > 0);
   const openNeeds = unassessedNeeds();
   const strip = $("#resource-alert");
-  strip.classList.toggle("hidden", !alerts.length && !openNeeds.length);
-  if (alerts.length || openNeeds.length) {
+  strip.classList.toggle("hidden", !alerts.length && !unsecuredAssessments.length && !openNeeds.length);
+  strip.classList.toggle("unsecured", unsecuredAssessments.length > 0);
+  if (alerts.length || unsecuredAssessments.length || openNeeds.length) {
     const gaps = alerts.filter(item => item.status === "gap").length;
     const tight = alerts.filter(item => item.status === "watch").length;
-    strip.innerHTML = `<strong>${gaps ? `${gaps} nicht tragbare Ressourcenlagen` : "Keine nachgewiesene Kapazitätslücke"} · ${openNeeds.length} Bedarfe noch nicht beurteilbar</strong><span>${tight} knappe Ressourcenlagen. Geprüft werden gemeinsame Phasenzeitfenster, nicht erfundene Monatsauslastungen.</span>`;
+    const firstUnsecured = unsecuredAssessments[0];
+    const unsecuredText = firstUnsecured ? `${firstUnsecured.group.name}: ${firstUnsecured.confirmation.unconfirmedNeeded} PT zusätzliche Kapazität muss noch bestätigt werden.` : "";
+    strip.innerHTML = `<strong>${gaps ? `${gaps} nicht tragbare Ressourcenlagen` : unsecuredAssessments.length ? `${unsecuredAssessments.length} Ressourcenlagen nicht abgesichert` : "Keine nachgewiesene Kapazitätslücke"} · ${openNeeds.length} Bedarfe noch nicht beurteilbar</strong><span>${esc(unsecuredText || `${tight} knappe Ressourcenlagen. Geprüft werden gemeinsame Phasenzeitfenster, nicht erfundene Monatsauslastungen.`)}</span>`;
   }
 
   const phaseRows = allPhaseDemands().sort((a, b) => a.project.object.localeCompare(b.project.object, "de") || phaseIndex(a.demand.phaseKey) - phaseIndex(b.demand.phaseKey));
@@ -539,17 +590,21 @@ function renderResources() {
     const status = demandStatus(item);
     const assessment = assessmentForResource(item.resourceKey);
     const itemBottleneck = assessment.bottleneck?.involvedIds.includes(item.id) ? assessment.bottleneck : null;
+    const itemConfirmation = assessment.confirmation?.involvedIds.includes(item.id) ? assessment.confirmation : null;
     const detail = item.past
       ? "Die Phase liegt vollständig in der Vergangenheit und wird nicht gegen künftige Kapazität gerechnet."
       : status === "gap" && itemBottleneck
       ? `${monthLabel(itemBottleneck.startMonth)} bis ${monthLabel(itemBottleneck.endMonth)}: ${itemBottleneck.demand} PT Bedarf, ${itemBottleneck.capacity} PT verfügbar, ${itemBottleneck.shortfall} PT fehlen.`
       : status === "watch" && itemBottleneck
         ? `${monthLabel(itemBottleneck.startMonth)} bis ${monthLabel(itemBottleneck.endMonth)}: ${Math.round(itemBottleneck.utilization * 100)} Prozent beansprucht.`
+        : status === "open" && itemConfirmation?.unconfirmedNeeded > 0
+          ? `${monthLabel(itemConfirmation.startMonth)} bis ${monthLabel(itemConfirmation.endMonth)}: ${itemConfirmation.demand} PT Bedarf, erst ${itemConfirmation.capacity} PT bestätigt. ${itemConfirmation.unconfirmedNeeded} PT müssen zusätzlich bestätigt werden.`
         : status === "open"
           ? item.pt == null ? "Noch benötigte PT fehlen." : !item.startMonth ? "Die Phase hat noch kein vollständiges Zeitfenster." : "Für benötigte Monate fehlt die bestätigte Verfügbarkeit."
           : "Der Restbedarf ist innerhalb des Phasenfensters rechnerisch tragbar.";
-    const statusLabel = item.past ? "Vergangene Phase" : RESOURCE_STATUS[status].label;
-    return `<tr class="phase-resource-row ${status}" data-edit-project="${esc(item.project.id)}"><td><strong>${esc(item.project.object)}</strong><small>${esc(phaseInfo(item.demand.phaseKey).label)}</small></td><td>${item.startMonth ? `${monthLabel(item.startMonth)} bis ${monthLabel(item.endMonth)}` : "noch offen"}</td><td><strong>${esc(item.name || "offen")}</strong></td><td>${item.pt == null ? "offen" : `${item.pt} PT`}</td><td><span class="resource-status ${status}">${esc(statusLabel)}</span><small>${esc(detail)}</small></td></tr>`;
+    const rowUnsecured = status === "open" && itemConfirmation?.unconfirmedNeeded > 0;
+    const statusLabel = item.past ? "Vergangene Phase" : rowUnsecured ? "Kapazität nicht abgesichert" : RESOURCE_STATUS[status].label;
+    return `<tr class="phase-resource-row ${status} ${rowUnsecured ? "unsecured" : ""}" data-edit-project="${esc(item.project.id)}"><td><strong>${esc(item.project.object)}</strong><small>${esc(phaseInfo(item.demand.phaseKey).label)}</small></td><td>${item.startMonth ? `${monthLabel(item.startMonth)} bis ${monthLabel(item.endMonth)}` : "noch offen"}</td><td><strong>${esc(item.name || "offen")}</strong></td><td>${item.pt == null ? "offen" : `${item.pt} PT`}</td><td><span class="resource-status ${status} ${rowUnsecured ? "unsecured" : ""}">${esc(statusLabel)}</span><small>${esc(detail)}</small></td></tr>`;
   }).join("")}</tbody></table>` : '<div class="empty-note">Noch kein Restbedarf erfasst. Im Projekt wird je Ressource und Phase genau ein Wert eingetragen.</div>';
 }
 function allPhaseCosts() {
@@ -588,6 +643,9 @@ function phaseOptions(selected) {
 function options(values, selected, placeholder) {
   return `${placeholder ? `<option value="">${placeholder}</option>` : ""}${values.map(value => `<option value="${esc(value)}" ${value === selected ? "selected" : ""}>${esc(value)}</option>`).join("")}`;
 }
+function phaseStatusOptions(selected) {
+  return Object.entries(PHASE_STATUS).map(([value, label]) => `<option value="${value}" ${value === selected ? "selected" : ""}>${label}</option>`).join("");
+}
 function roleOptions(selected = "", placeholder = "Verantwortung wählen") {
   const value = canonicalResourceName(selected);
   const legacy = value && !ROLE_OPTIONS.includes(value) ? `<option value="${esc(value)}" selected>${esc(value)} · bestehender Wert</option>` : "";
@@ -603,7 +661,7 @@ function setRoleSelect(selector, value, emptyLabel) {
   $(selector).innerHTML = roleOptions(isEmpty ? "" : normalized, emptyLabel);
 }
 function renderPhasePlanEditor() {
-  $("#phase-plan-editor").innerHTML = editPhasePlan.map((row, index) => `<div class="phase-plan-row ${phaseInfo(row.phaseKey).className}" data-phase-plan="${index}"><div><i></i><strong>${phaseInfo(row.phaseKey).label}</strong><span>${index === 1 ? "Danach Entscheid Gesamtvorstand" : index === 3 ? "Danach Projektfreigabe Gesamtvorstand" : "Entscheid im Kompetenzrahmen"}</span></div><label><span>Status</span><select class="pp-status">${options(["open", "planned", "current", "done"], row.status)}</select></label><label><span>Start</span><select class="pp-start">${quarterOptions(row.startQuarter)}</select></label><label><span>Ende</span><select class="pp-end">${quarterOptions(row.endQuarter)}</select></label></div>`).join("");
+  $("#phase-plan-editor").innerHTML = editPhasePlan.map((row, index) => `<div class="phase-plan-row ${phaseInfo(row.phaseKey).className}" data-phase-plan="${index}"><div><i></i><strong>${phaseInfo(row.phaseKey).label}</strong><span>${index === 1 ? "Danach Entscheid Gesamtvorstand" : index === 3 ? "Danach Projektfreigabe Gesamtvorstand" : "Entscheid im Kompetenzrahmen"}</span></div><label><span>Status</span><select class="pp-status">${phaseStatusOptions(row.status)}</select></label><label><span>Start</span><select class="pp-start">${quarterOptions(row.startQuarter)}</select></label><label><span>Ende</span><select class="pp-end">${quarterOptions(row.endQuarter)}</select></label></div>`).join("");
 }
 function renderDemandEditor() {
   $("#demand-editor").innerHTML = editDemands.length ? editDemands.map((demand, index) => {
@@ -734,6 +792,12 @@ function renderProjectTypeGuidance() {
   const selected = $("#f-kind").value;
   $$('[data-project-type]').forEach(card => card.classList.toggle("active", card.dataset.projectType === selected));
 }
+function renderCapacityYearSummary() {
+  const values = $$("[data-capacity-month] .cy-pt").map(input => input.value).filter(value => value !== "");
+  const total = values.reduce((sum, value) => sum + (nullableNumberValue(value) ?? 0), 0);
+  $("#c-year-total").textContent = `${total} PT erfasst`;
+  $("#c-year-open").textContent = values.length === 12 ? "Alle 12 Monate ausgefüllt" : `${12 - values.length} Monate noch offen`;
+}
 function renderCapacityYearGrid() {
   const name = canonicalResourceName($("#c-name").value);
   const year = $("#c-year").value;
@@ -743,6 +807,7 @@ function renderCapacityYearGrid() {
     const item = existing.get(month);
     return `<article class="capacity-month ${item?.requiresReview ? "review" : ""}" data-capacity-month="${month}"><strong>${label}</strong><label><span>Verfügbare PT</span><input class="cy-pt" type="number" min="0" step=".5" value="${esc(item?.pt ?? "")}" inputmode="decimal" placeholder="offen"></label>${item?.requiresReview ? '<small>früheren Wert neu bestätigen</small>' : ""}</article>`;
   }).join("");
+  renderCapacityYearSummary();
   const hasYear = capacities().some(item => resourceKey(item.name) === resourceKey(name) && (item.month?.startsWith(`${year}-`) || item.legacyQuarter?.startsWith(`${year}-`)));
   $("#delete-capacity").classList.toggle("hidden", !hasYear);
 }
@@ -930,7 +995,8 @@ $("#project-form").addEventListener("submit", event => {
   selectedId = id;
   save(existing ? "Projektplanung geändert" : "Projekt erstellt");
   $("#project-dialog").close();
-  toast("Projektplanung gespeichert");
+  const warningShown = project.demands.some(demand => focusResourceWarning(demand.name, project));
+  if (!warningShown) toast("Projektplanung gespeichert");
 });
 $("#delete-project").addEventListener("click", () => {
   const id = $("#project-id").value;
@@ -957,6 +1023,7 @@ $("#resource-focus").addEventListener("change", renderResources);
 }));
 $("#c-name").addEventListener("change", renderCapacityYearGrid);
 $("#c-year").addEventListener("change", renderCapacityYearGrid);
+$("#capacity-year-grid").addEventListener("input", renderCapacityYearSummary);
 $("#capacity-form").addEventListener("submit", event => {
   event.preventDefault();
   const name = canonicalResourceName($("#c-name").value);
@@ -992,7 +1059,7 @@ $("#capacity-form").addEventListener("submit", event => {
   activeWorkspace().capacities = [...untouched, ...annualValues];
   save(previousCount ? "Jahresverfügbarkeit geändert" : "Jahresverfügbarkeit erfasst");
   $("#capacity-dialog").close();
-  toast(`${filled.length} Monatswerte für ${year} gespeichert`);
+  if (!focusResourceWarning(name)) toast(`${filled.length} Monatswerte für ${year} gespeichert`);
 });
 $("#delete-capacity").addEventListener("click", () => {
   const name = canonicalResourceName($("#c-name").value);
@@ -1058,7 +1125,7 @@ $("#import-backup").addEventListener("change", async event => {
 
 $("#export-projects").addEventListener("click", () => csv("BGR_BauRadar_Projekte_und_Phasen.csv", [
   ["Arbeitsstand", "Projekt ID", "Objekt", "Projektart", "Mutterstand", "Arbeitsstand Phase", "Verantwortung", "Projektphase", "Status", "Start", "Ende"],
-  ...projects().flatMap(project => project.phasePlan.map(row => [state.mode === "scenario" ? activeWorkspace().name : "Scharfer Stand", project.id, project.object, project.kind, phaseInfo(project.motherPhaseKey).label, phaseInfo(project.currentPhaseKey).label, project.currentAssignee, phaseInfo(row.phaseKey).label, row.status, row.startQuarter, row.endQuarter]))
+  ...projects().flatMap(project => project.phasePlan.map(row => [state.mode === "scenario" ? activeWorkspace().name : "Scharfer Stand", project.id, project.object, project.kind, phaseInfo(project.motherPhaseKey).label, phaseInfo(project.currentPhaseKey).label, project.currentAssignee, phaseInfo(row.phaseKey).label, PHASE_STATUS[row.status] || row.status, row.startQuarter, row.endQuarter]))
 ]));
 $("#export-resources").addEventListener("click", () => csv("BGR_BauRadar_Ressourcenbedarf.csv", [
   ["Arbeitsstand", "Projekt ID", "Objekt", "Projektphase", "Phasenbeginn", "Phasenende", "Person oder Firma", "Noch benötigte PT", "Beurteilung", "Kritischer Zeitraum", "Gemeinsamer Bedarf PT", "Verfügbarkeit PT", "Fehlende PT"],
