@@ -95,6 +95,13 @@ test("laufende Phase beginnt für den Restbedarf im aktuellen Monat", () => {
   );
 });
 
+test("vollständig vergangene Phase wird als vergangen erkannt", () => {
+  assert.deepEqual(
+    phaseMonthWindow({ startQuarter: "2025-Q1", endQuarter: "2025-Q2" }, "2026-09"),
+    { startMonth: "2025-01", endMonth: "2025-06", past: true }
+  );
+});
+
 test("alte Werte bleiben als Hinweis erhalten und werden nicht umgerechnet", () => {
   const migrated = migrateState({
     projects: [{ id: "p1", demands: [{ id: "d1", name: "Tresto", phaseKey: "planung", totalMin: 5, totalMax: 7, allocations: [{ month: "2027-01", min: 2, max: 3 }] }] }],
