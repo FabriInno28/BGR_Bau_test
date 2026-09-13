@@ -382,6 +382,17 @@ function focusResourceWarning(name, project = null) {
   toast(warning.message, warning.type, 9000);
   return true;
 }
+function focusProjectResourceWarning(project) {
+  const candidates = [...new Set(project.demands.map(demand => canonicalResourceName(demand.name)).filter(Boolean))].map(name => {
+    const key = resourceKey(name);
+    const assessment = assessmentForResource(key);
+    const warning = assessmentWarning(name, assessment);
+    const involvedIds = assessment.bottleneck?.involvedIds || assessment.confirmation?.involvedIds || [];
+    const involved = allPhaseDemands().some(item => item.project.id === project.id && item.resourceKey === key && involvedIds.includes(item.id));
+    return warning && involved ? { name, warning } : null;
+  }).filter(Boolean).sort((a, b) => ({ gap: 2, warning: 1 })[b.warning.type] - ({ gap: 2, warning: 1 })[a.warning.type]);
+  return candidates.length ? focusResourceWarning(candidates[0].name, project) : false;
+}
 function allResourceAssessments() {
   return resourceGroups().map(group => ({ group, ...assessmentForResource(group.key) }));
 }
@@ -580,9 +591,9 @@ function renderResources() {
   if (alerts.length || unsecuredAssessments.length || openNeeds.length) {
     const gaps = alerts.filter(item => item.status === "gap").length;
     const tight = alerts.filter(item => item.status === "watch").length;
-    const firstUnsecured = unsecuredAssessments[0];
-    const unsecuredText = firstUnsecured ? `${firstUnsecured.group.name}: ${firstUnsecured.confirmation.unconfirmedNeeded} PT zusätzliche Kapazität muss noch bestätigt werden.` : "";
-    strip.innerHTML = `<strong>${gaps ? `${gaps} nicht tragbare Ressourcenlagen` : unsecuredAssessments.length ? `${unsecuredAssessments.length} Ressourcenlagen nicht abgesichert` : "Keine nachgewiesene Kapazitätslücke"} · ${openNeeds.length} Bedarfe noch nicht beurteilbar</strong><span>${esc(unsecuredText || `${tight} knappe Ressourcenlagen. Geprüft werden gemeinsame Phasenzeitfenster, nicht erfundene Monatsauslastungen.`)}</span>`;
+    const firstCritical = assessments.find(item => item.status === "gap") || unsecuredAssessments[0];
+    const criticalWarning = firstCritical ? assessmentWarning(firstCritical.group.name, firstCritical) : null;
+    strip.innerHTML = `<strong>${gaps ? `${gaps} nicht tragbare Ressourcenlagen` : unsecuredAssessments.length ? `${unsecuredAssessments.length} Ressourcenlagen nicht abgesichert` : "Keine nachgewiesene Kapazitätslücke"} · ${openNeeds.length} Bedarfe noch nicht beurteilbar</strong><span>${esc(criticalWarning?.message || `${tight} knappe Ressourcenlagen. Geprüft werden gemeinsame Phasenzeitfenster, nicht erfundene Monatsauslastungen.`)}</span>`;
   }
 
   const phaseRows = allPhaseDemands().sort((a, b) => a.project.object.localeCompare(b.project.object, "de") || phaseIndex(a.demand.phaseKey) - phaseIndex(b.demand.phaseKey));
@@ -995,7 +1006,7 @@ $("#project-form").addEventListener("submit", event => {
   selectedId = id;
   save(existing ? "Projektplanung geändert" : "Projekt erstellt");
   $("#project-dialog").close();
-  const warningShown = project.demands.some(demand => focusResourceWarning(demand.name, project));
+  const warningShown = focusProjectResourceWarning(project);
   if (!warningShown) toast("Projektplanung gespeichert");
 });
 $("#delete-project").addEventListener("click", () => {
