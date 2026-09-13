@@ -1,114 +1,78 @@
-# BGR BauRadar · verbindlicher Planungsprototyp
+# BGR BauRadar
 
-Das BGR BauRadar verbindet den aktuellen Stand der BGR Mutterliste mit einer rollenden Projekt-, Ressourcen- und Finanzplanung.
+Lokaler Pilot für die rollende Bauplanung der Baugenossenschaft Reussbühl.
 
-## Grundlogik
+## Rolle des BauRadars
 
-Die Mutterliste zeigt, wo ein Projekt heute steht. Sie wird durch das BauRadar nicht verändert.
+Das BauRadar beantwortet die Umsetzungsfrage:
 
-Im BauRadar werden je Projekt separat geplant:
+- Welche Projekte und Phasen stehen an?
+- Wer trägt die Verantwortung?
+- Welche Menschen und Partner werden wann tatsächlich benötigt?
+- Reicht die bestätigte Verfügbarkeit?
+- Welche Phasenkosten sind geschätzt, budgetiert, freigegeben oder gebunden?
+- Was ist ein verbindlicher Stand und was ist nur ein Szenario?
 
-- alle sieben Projektphasen
-- Start und Ende jeder Phase in Quartalen
-- Rollen und Bauherrenbegleitung
-- eindeutige Verantwortung für die aktuelle Phase
-- Ressourcenbedarf je Person oder Firma, Funktion, Projektphase und Quartal
-- Kosten je Projektphase und Jahr
-- Meilensteine und Entscheide
+Die langfristige Objekt-, Investitions-, Finanzierungs- und Cashflowplanung bleibt im LUKB ImmoTool. Werte daraus können als Referenz sichtbar sein, werden aber nie automatisch mit den Phasenkosten addiert.
 
-Der lokale Arbeitsstand kann geprüft und als CSV exportiert werden.
+## Verbindliche Fachlogik
 
-## Projektphasen
+### Ressourcen
 
-1. Anlass / Prüfauftrag
-2. Machbarkeitsstudie
-3. Planerauswahl
-4. Planung / Projektierung
-5. Ausschreibung / Vergabe
-6. Realisierung
-7. Abschluss / Übergabe
+- Gesamtbedarf wird je Projekt, Phase und Ressource als Bandbreite in Personentagen geschätzt.
+- Die zeitliche Zuordnung erfolgt bewusst je Monat.
+- Es gibt keine lineare oder automatische Verteilung.
+- Nicht zugeordneter Bedarf bleibt als «zeitlich noch nicht geplant» sichtbar.
+- Quartale und Jahre sind Auswertungen aus den Monatswerten.
+- Iris, Alex, Fabri, TRESTO, Büro 8 und externer Partner sind Kapazitätsressourcen.
+- BK und BHB sind Rollen beziehungsweise Gremien und werden nicht mit Personentagen belastet.
+- Pro Ressource und Monat ist nur ein Verfügbarkeitseintrag erlaubt.
+- Monatswerte ausserhalb des Phasenfensters werden beim Speichern abgewiesen.
 
-Alle Phasen haben im gesamten BauRadar dieselbe Farbe. Die beiden grossen Entscheide nach der Machbarkeitsstudie und nach der Planung beziehen den Gesamtvorstand ein.
+### Phasentore
 
-## Verbindliche Ressourcenplanung
+Die frühere Meilensteinliste ist entfernt. Entscheide werden direkt als Phasentore protokolliert mit:
 
-Der Projektbedarf wird so erfasst:
+- Phase
+- Entscheidstatus
+- Entscheidinstanz
+- Datum
+- Kurzbegründung
+- Auflagen
+- nächste Phase
 
-`Name | Funktion | Projektphase | Quartal | PT Minimum | PT Maximum`
+Gespeicherte Torentscheide werden in der Oberfläche nicht still überschrieben.
 
-Die Verfügbarkeit wird separat und verbindlich erfasst:
+### Arbeitsstände
 
-`Name | Funktion | Quartal | PT Minimum | PT Maximum | bestätigt`
+Der scharfe Stand ist jederzeit sichtbar. Ein Szenario wird als vollständige Kopie des scharfen Standes erstellt und verändert diesen nicht. Ein Szenario hält Name, Fragestellung und Ausgangsdatum fest.
 
-Nur mit der Person oder Firma geklärte Kapazitäten gehören in die Verfügbarkeitsmaske.
+Die kontrollierte Übernahme einzelner Szenarioänderungen in den scharfen Stand ist ein nächster Ausbauschritt. Bis dahin dienen Szenarien ausschliesslich zum Spielen und Vergleichen.
 
-Personen, Gremien und Firmen werden aus einer festen Liste gewählt: `Iris`, `Alex`, `Fabri`, `TRESTO`, `Büro 8`, `BK`, `BHB` und `externer Partner`. Dadurch werden Bedarf und Verfügbarkeit zuverlässig unter derselben Ressource zusammengeführt.
+## Lokale Speicherung und Sicherung
 
-Die Bewertung lautet:
+Der Pilot speichert weiterhin im lokalen Browser. Er ist noch keine Mehrbenutzeranwendung.
 
-- **tragbar:** maximaler Bedarf ist durch die minimale Verfügbarkeit gedeckt
-- **mögliche Lücke:** die beiden Bandbreiten überschneiden sich
-- **sichere Lücke:** minimaler Bedarf liegt über der maximalen Verfügbarkeit
-- **offen:** Bedarf ist vorhanden, aber keine verbindliche Verfügbarkeit erfasst
+Nach jeder Arbeitssitzung sollte eine **Vollsicherung JSON** heruntergeladen werden. Nur diese Datei kann den gesamten Stand einschliesslich Szenarien, Ressourcen, Phasentoren und Änderungsprotokoll verlustfrei wiederherstellen.
 
-Beispiel: Bedarf 25 bis 30 PT und Verfügbarkeit 15 bis 20 PT ergibt eine sichere Lücke von mindestens 5 und höchstens 15 PT.
+CSV-Dateien sind lesbare Exporte für Excel. Sie sind kein vollständiges Wiederherstellungsformat.
 
-## Finanzplanung
+Das Speicherschema trägt eine Versionsnummer. Alte Quartalsbedarfe werden bei der Migration als Gesamtbedarf erhalten, aber nicht erfunden auf Monate verteilt.
 
-Kosten werden nicht mehr als «bekannt» bezeichnet. Jeder Betrag wird einer Projektphase, einem Jahr und einer Qualität zugeordnet:
-
-- Schätzung
-- budgetiert
-- freigegeben
-- vertraglich gebunden
-
-Nur freigegebene und vertraglich gebundene Beträge werden in der gesicherten Sicht zusammengezählt.
-
-Die Jahressicht wird zusätzlich in drei Planungshorizonte verdichtet:
-
-- 0 bis 1 Jahr
-- 2 bis 3 Jahre
-- 4 bis 10 Jahre
-
-Bestehende Beträge aus der Mutterliste bleiben als Hinweis sichtbar. Solange sie keiner Projektphase, keinem Jahr und keiner Qualität zugeordnet sind, werden sie nicht als gesichert gewertet.
-
-## Projektarten
-
-- **Kleinprojekt:** ohne externen Planer, Architekten oder vergleichbare Fachplanung und innerhalb des bewilligten Projektrahmens. Die genaue Abgrenzung wird später im BGR Handbuch festgelegt.
-- **Bauprojekt:** alle übrigen relevanten Bauvorhaben.
-
-## Bedienung
-
-1. Projekt in der Gesamtsicht auswählen.
-2. **Projekt planen** öffnen.
-3. Alle relevanten Projektphasen terminieren.
-4. Rollen, Ressourcenbedarf, Kosten und Meilensteine erfassen.
-5. Verbindliche Verfügbarkeit der Personen und Firmen ergänzen.
-6. Ressourcenwarnungen und finanzielle Jahressicht prüfen.
-7. Geprüfte Daten als CSV exportieren.
-
-## Lokal starten
+## Entwicklung
 
 ```bash
 npm install
+npm test
 npm run dev
-```
-
-## Produktionsbuild
-
-```bash
-npm install
 npm run build
 ```
 
-Das fertige Ergebnis liegt in `dist/` und kann auch für GitHub Pages verwendet werden.
+Die Tests prüfen die Ressourcenbandbreiten, den ungeplanten Rest, die Phasengrenzen, die Migration alter Quartalswerte und den Schutz des CSV-Exports vor Excel-Formeln.
 
-## Grenzen des Prototyps
+## Datenschutz
 
-- keine Anmeldung
-- keine Mehrbenutzerbearbeitung
-- keine zentrale Datenbank
-- Speicherung im Browser des verwendeten Geräts
-- keine automatische Veränderung der Excel Mutterliste
+Das Repository ist privat. Die frühere GitHub-Pages-Veröffentlichung ist deaktiviert. Echte Projektdaten liegen weiterhin in der Git-Historie und dürfen vor einer erneuten öffentlichen Veröffentlichung nicht nur im aktuellen Stand gelöscht werden; dafür braucht es ein bereinigtes Repository oder eine bereinigte Historie.
 
-Für einen späteren gemeinsamen Betrieb braucht es ein Berechtigungs-, Sicherungs- und Datenverantwortungskonzept.
+Supabase oder eine vergleichbare zentrale Datenbank folgt erst nach dem ausgiebigen Pilotbetrieb.
+
