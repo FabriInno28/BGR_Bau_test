@@ -7,6 +7,7 @@ import {
   canonicalResourceName,
   clone,
   csvSafe,
+  migratePhaseResponsibilities,
   migrateState,
   nullableNumberValue,
   phaseMonthWindow,
@@ -127,13 +128,14 @@ function inferRoles(project) {
     deputy: project.deputy || "offen"
   };
 }
-function defaultPhasePlan(currentKey) {
+function defaultPhasePlan(currentKey, currentAssignee = "") {
   const current = phaseIndex(currentKey);
   return PHASES.map((phase, index) => ({
     phaseKey: phase.key,
     status: index < current ? "done" : index === current ? "current" : "open",
     startQuarter: "",
-    endQuarter: ""
+    endQuarter: "",
+    assignee: phase.key === currentKey && ROLE_OPTIONS.includes(currentAssignee) ? currentAssignee : ""
   }));
 }
 function rawMotherCost(project) {
@@ -145,6 +147,16 @@ function normalizeProject(project) {
   const currentPhaseKey = project.currentPhaseKey || project.phaseKey || motherPhaseKey;
   const inferredAssignee = canonicalResourceName(project.currentAssignee || project.currentOwner || project.bgrResponsibility || "");
   const migrated = migrateState({ projects: [project] }).projects[0];
+  const migratedPhasePlan = migratePhaseResponsibilities({
+    ...project,
+    phasePlan: migrated.phasePlan,
+    currentPhaseKey,
+    currentAssignee: inferredAssignee
+  });
+  const phasePlan = migratedPhasePlan.length === PHASES.length
+    ? migratedPhasePlan
+    : defaultPhasePlan(currentPhaseKey, inferredAssignee);
+  const currentAssignee = phasePlan.find(row => row.phaseKey === currentPhaseKey)?.assignee || "";
   return {
     ...clone(project),
     ...migrated,
@@ -155,10 +167,10 @@ function normalizeProject(project) {
         : inferKind(project),
     motherPhaseKey,
     currentPhaseKey,
-    currentAssignee: ROLE_OPTIONS.includes(inferredAssignee) ? inferredAssignee : "",
+    currentAssignee,
     motherQuarter: project.motherQuarter || ((parseInt(project.startYear, 10) || 2026) > 2026 ? `${project.startYear}-Q1` : START_QUARTER),
     roles: project.roles || inferRoles(project),
-    phasePlan: Array.isArray(project.phasePlan) && project.phasePlan.length === PHASES.length ? project.phasePlan : defaultPhasePlan(currentPhaseKey),
+    phasePlan,
     phaseCosts: Array.isArray(project.phaseCosts) ? project.phaseCosts : [],
     gateHistory: Array.isArray(project.gateHistory) ? project.gateHistory : []
   };
@@ -280,7 +292,10 @@ function phasePlanIssues(project) {
 }
 function projectIssues(project) {
   const issues = [];
-  if (!project.currentAssignee) issues.push("Verantwortung aktuelle Phase offen");
+  project.phasePlan.forEach(row => {
+    const responsibilityRelevant = row.phaseKey === project.currentPhaseKey || Boolean(row.startQuarter || row.endQuarter);
+    if (responsibilityRelevant && !row.assignee) issues.push(`${phaseInfo(row.phaseKey).short}: Verantwortung offen`);
+  });
   if (!plannedPhases(project).length) issues.push("Phasenplan offen");
   if (project.kind === "Bauprojekt" && phaseIndex(project.currentPhaseKey) >= 1 && (!project.roles.bhb || project.roles.bhb.toLowerCase() === "offen")) issues.push("Bauherrenbegleitung offen");
   for (const demand of project.demands) {
@@ -520,14 +535,15 @@ function renderDetail() {
   const resources = project.demands.slice(0, 4);
   $("#project-detail").innerHTML = `<div class="project-cover"><div class="meta"><span>${esc(project.kind)} · ${state.mode === "scenario" ? "Szenario" : "scharfer Stand"}</span><span class="status-chip">${issues.length ? `${issues.length} Punkte offen` : "Plan prüfbar"}</span></div><h3>${esc(project.object)}</h3><p>${esc(project.measure)}</p></div>
     <div class="project-body">
-      <div class="mother-current"><span>Stand Mutterliste</span><strong>${esc(phaseInfo(project.motherPhaseKey).label)}</strong><small>${project.currentAssignee ? `Verantwortung aktuelle Phase: ${esc(project.currentAssignee)}` : "Verantwortung aktuelle Phase noch offen"}</small></div>
+      <div class="mother-current"><span>Stand Mutterliste</span><strong>${esc(phaseInfo(project.motherPhaseKey).label)}</strong><small>${phaseAssignee(project) ? `Verantwortung aktuelle Phase: ${esc(phaseAssignee(project))}` : "Verantwortung aktuelle Phase noch offen"}</small></div>
       <div class="next-box"><span>Letzter Phasentorentscheid</span><strong>${esc(latestGate?.status || "noch kein Entscheid erfasst")}</strong><small>${latestGate ? `${esc(phaseInfo(latestGate.phaseKey).short)} · ${esc(latestGate.authority)} · ${esc(latestGate.date)}` : "Im Projekt protokollieren"}</small></div>
       <span class="section-label">Alle Projektphasen</span>
       <div class="phase-steps">${PHASES.map(phase => {
         const row = project.phasePlan.find(item => item.phaseKey === phase.key);
         const resourceStatus = row?.startQuarter ? phaseResourceStatus(project, phase.key) : "open";
         const statusText = project.demands.some(demand => demand.phaseKey === phase.key) ? RESOURCE_STATUS[resourceStatus].label : "Ressourcenbedarf offen";
-        return `<button class="phase-step ${phase.className} resource-${resourceStatus} ${row?.startQuarter ? "done" : ""} ${phase.key === project.currentPhaseKey ? "current" : ""}" title="${esc(phase.label)} · ${row?.startQuarter ? `${qLabel(row.startQuarter)} bis ${qLabel(row.endQuarter)} · ${statusText}` : "noch nicht geplant"}" aria-label="${esc(phase.label)}: ${esc(statusText)}"></button>`;
+        const responsibility = row?.assignee ? `Verantwortung ${row.assignee}` : "Verantwortung offen";
+        return `<button class="phase-step ${phase.className} resource-${resourceStatus} ${row?.startQuarter ? "done" : ""} ${phase.key === project.currentPhaseKey ? "current" : ""}" title="${esc(phase.label)} · ${responsibility} · ${row?.startQuarter ? `${qLabel(row.startQuarter)} bis ${qLabel(row.endQuarter)} · ${statusText}` : "noch nicht geplant"}" aria-label="${esc(phase.label)}: ${esc(responsibility)}, ${esc(statusText)}"></button>`;
       }).join("")}</div>
       <div class="perspectives"><div class="perspective"><span>Phasen geplant</span><strong>${planned.length} von 7</strong></div><div class="perspective"><span>Ressourcen</span><strong>${project.demands.length || "offen"}</strong></div><div class="perspective"><span>Freigegeben / gebunden</span><strong>${chf(securedCost(project), true)}</strong></div><div class="perspective"><span>Offene Punkte</span><strong>${issues.length}</strong></div></div>
       <span class="section-label">Ressourcen dieses Projekts</span>
@@ -662,6 +678,9 @@ function roleOptions(selected = "", placeholder = "Verantwortung wählen") {
   const legacy = value && !ROLE_OPTIONS.includes(value) ? `<option value="${esc(value)}" selected>${esc(value)} · bestehender Wert</option>` : "";
   return `<option value="">${placeholder}</option>${legacy}${options(ROLE_OPTIONS, value)}`;
 }
+function phaseAssignee(project, phaseKey = project.currentPhaseKey) {
+  return project.phasePlan.find(row => row.phaseKey === phaseKey)?.assignee || "";
+}
 function capacityResourceOptions(selected = "") {
   const value = canonicalResourceName(selected);
   return `<option value="">Ressource wählen</option>${options(CAPACITY_RESOURCES, value)}`;
@@ -672,7 +691,16 @@ function setRoleSelect(selector, value, emptyLabel) {
   $(selector).innerHTML = roleOptions(isEmpty ? "" : normalized, emptyLabel);
 }
 function renderPhasePlanEditor() {
-  $("#phase-plan-editor").innerHTML = editPhasePlan.map((row, index) => `<div class="phase-plan-row ${phaseInfo(row.phaseKey).className}" data-phase-plan="${index}"><div><i></i><strong>${phaseInfo(row.phaseKey).label}</strong><span>${index === 1 ? "Danach Entscheid Gesamtvorstand" : index === 3 ? "Danach Projektfreigabe Gesamtvorstand" : "Entscheid im Kompetenzrahmen"}</span></div><label><span>Status</span><select class="pp-status">${phaseStatusOptions(row.status)}</select></label><label><span>Start</span><select class="pp-start">${quarterOptions(row.startQuarter)}</select></label><label><span>Ende</span><select class="pp-end">${quarterOptions(row.endQuarter)}</select></label></div>`).join("");
+  $("#phase-plan-editor").innerHTML = editPhasePlan.map((row, index) => `<div class="phase-plan-row ${phaseInfo(row.phaseKey).className}" data-phase-plan="${index}"><div><i></i><strong>${phaseInfo(row.phaseKey).label}</strong><span>${index === 1 ? "Danach Entscheid Gesamtvorstand" : index === 3 ? "Danach Projektfreigabe Gesamtvorstand" : "Entscheid im Kompetenzrahmen"}</span></div><label><span>Status</span><select class="pp-status">${phaseStatusOptions(row.status)}</select></label><label><span>Verantwortung</span><select class="pp-assignee">${roleOptions(row.assignee)}</select></label><label><span>Start</span><select class="pp-start">${quarterOptions(row.startQuarter)}</select></label><label><span>Ende</span><select class="pp-end">${quarterOptions(row.endQuarter)}</select></label></div>`).join("");
+  renderCurrentAssigneeSummary();
+}
+function renderCurrentAssigneeSummary() {
+  const summary = $("#f-current-assignee-summary");
+  if (!summary) return;
+  const currentPhaseKey = $("#f-phase").value;
+  const assignee = editPhasePlan.find(row => row.phaseKey === currentPhaseKey)?.assignee || "";
+  summary.textContent = assignee || "noch offen";
+  summary.classList.toggle("open", !assignee);
 }
 function renderDemandEditor() {
   $("#demand-editor").innerHTML = editDemands.length ? editDemands.map((demand, index) => {
@@ -698,6 +726,7 @@ function syncEditors() {
   editPhasePlan = $$("[data-phase-plan]").map((row, index) => ({
     ...editPhasePlan[index],
     status: row.querySelector(".pp-status").value,
+    assignee: row.querySelector(".pp-assignee").value,
     startQuarter: row.querySelector(".pp-start").value,
     endQuarter: row.querySelector(".pp-end").value
   }));
@@ -772,7 +801,6 @@ function openProject(id, newProject = false) {
   $("#f-kind").value = project.kind;
   renderProjectTypeGuidance();
   $("#f-phase").value = project.currentPhaseKey;
-  $("#f-current-assignee").innerHTML = roleOptions(project.currentAssignee);
   $("#f-next").value = project.nextDecision || "";
   setRoleSelect("#f-gs", project.roles.gs, "offen");
   setRoleSelect("#f-bk", project.roles.bk, "offen");
@@ -788,6 +816,7 @@ function openProject(id, newProject = false) {
     ? `<strong>Referenz ImmoTool / Excel: ${chf(rawMotherCost(project))}</strong><span>Dieser Referenzwert wird nie automatisch mit den Phasenkosten summiert.</span>`
     : "<strong>Kein Referenzwert</strong><span>Phasenkosten werden mit Quelle, Informationsdatum und Qualität erfasst.</span>";
   renderPhasePlanEditor();
+  renderCurrentAssigneeSummary();
   renderDemandEditor();
   renderPhaseCostEditor();
   renderGateEditor();
@@ -911,6 +940,14 @@ $("#project-detail").addEventListener("click", event => {
 $("#edit-selected").addEventListener("click", () => openProject(selectedId));
 $("#new-project").addEventListener("click", () => openProject(null, true));
 $("#f-kind").addEventListener("change", renderProjectTypeGuidance);
+$("#f-phase").addEventListener("change", renderCurrentAssigneeSummary);
+$("#phase-plan-editor").addEventListener("change", event => {
+  const select = event.target.closest(".pp-assignee");
+  const row = select?.closest("[data-phase-plan]");
+  if (!select || !row) return;
+  editPhasePlan[Number(row.dataset.phasePlan)].assignee = select.value;
+  renderCurrentAssigneeSummary();
+});
 $("#expand-long").addEventListener("click", () => { longOpen = !longOpen; renderLongHorizon(); });
 $$("[data-form-tab]").forEach(button => button.addEventListener("click", () => {
   syncEditors();
@@ -975,6 +1012,13 @@ $("#project-form").addEventListener("submit", event => {
     setFormTab(phaseErrors.length ? "phases" : "resources");
     return;
   }
+  const currentPhaseKey = $("#f-phase").value;
+  const currentAssignee = editPhasePlan.find(row => row.phaseKey === currentPhaseKey)?.assignee || "";
+  if (!currentAssignee) {
+    toast(`Verantwortung ${phaseInfo(currentPhaseKey).short} fehlt`);
+    setFormTab("phases");
+    return;
+  }
   const newGates = editGateHistory.filter(gate => !gate.persisted).map(({ persisted, ...gate }) => gate);
   const oldGates = editGateHistory.filter(gate => gate.persisted).map(({ persisted, ...gate }) => gate);
   const project = normalizeProject({
@@ -983,8 +1027,8 @@ $("#project-form").addEventListener("submit", event => {
     object: $("#f-object").value.trim(),
     measure: $("#f-measure").value.trim(),
     kind: $("#f-kind").value,
-    currentPhaseKey: $("#f-phase").value,
-    currentAssignee: $("#f-current-assignee").value,
+    currentPhaseKey,
+    currentAssignee,
     nextDecision: $("#f-next").value.trim(),
     roles: {
       gs: $("#f-gs").value || "offen",
@@ -1135,8 +1179,8 @@ $("#import-backup").addEventListener("change", async event => {
 });
 
 $("#export-projects").addEventListener("click", () => csv("BGR_BauRadar_Projekte_und_Phasen.csv", [
-  ["Arbeitsstand", "Projekt ID", "Objekt", "Projektart", "Mutterstand", "Arbeitsstand Phase", "Verantwortung", "Projektphase", "Status", "Start", "Ende"],
-  ...projects().flatMap(project => project.phasePlan.map(row => [state.mode === "scenario" ? activeWorkspace().name : "Scharfer Stand", project.id, project.object, project.kind, phaseInfo(project.motherPhaseKey).label, phaseInfo(project.currentPhaseKey).label, project.currentAssignee, phaseInfo(row.phaseKey).label, PHASE_STATUS[row.status] || row.status, row.startQuarter, row.endQuarter]))
+  ["Arbeitsstand", "Projekt ID", "Objekt", "Projektart", "Mutterstand", "Arbeitsstand Phase", "Verantwortung aktuelle Phase", "Projektphase", "Verantwortung Projektphase", "Status", "Start", "Ende"],
+  ...projects().flatMap(project => project.phasePlan.map(row => [state.mode === "scenario" ? activeWorkspace().name : "Scharfer Stand", project.id, project.object, project.kind, phaseInfo(project.motherPhaseKey).label, phaseInfo(project.currentPhaseKey).label, phaseAssignee(project), phaseInfo(row.phaseKey).label, row.assignee, PHASE_STATUS[row.status] || row.status, row.startQuarter, row.endQuarter]))
 ]));
 $("#export-resources").addEventListener("click", () => csv("BGR_BauRadar_Ressourcenbedarf.csv", [
   ["Arbeitsstand", "Projekt ID", "Objekt", "Projektphase", "Phasenbeginn", "Phasenende", "Person oder Firma", "Noch benötigte PT", "Beurteilung", "Kritischer Zeitraum", "Gemeinsamer Bedarf PT", "Verfügbarkeit PT", "Fehlende PT"],
