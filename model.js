@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 5;
+export const SCHEMA_VERSION = 6;
 
 export const CAPACITY_RESOURCES = [
   "Iris",
@@ -33,6 +33,24 @@ export function resourceKey(name) {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "")
     .trim();
+}
+
+export function migratePhaseResponsibilities(project = {}) {
+  const currentPhaseKey = project.currentPhaseKey || project.phaseKey || "";
+  const formerCurrentAssignee = canonicalResourceName(
+    project.currentAssignee || project.currentOwner || project.bgrResponsibility || ""
+  );
+  const phasePlan = Array.isArray(project.phasePlan) ? project.phasePlan : [];
+
+  return phasePlan.map(row => {
+    const migratedAssignee = canonicalResourceName(
+      row.assignee || (row.phaseKey === currentPhaseKey ? formerCurrentAssignee : "")
+    );
+    return {
+      ...row,
+      assignee: ROLE_OPTIONS.includes(migratedAssignee) ? migratedAssignee : ""
+    };
+  });
 }
 
 export function canonicalResourceName(value) {
@@ -159,12 +177,19 @@ export function migrateState(saved, baselineProjects = []) {
     mode: source.mode === "scenario" ? "scenario" : "sharp",
     activeScenarioId: source.activeScenarioId || null,
     scenarios: Array.isArray(source.scenarios) ? source.scenarios : [],
-    projects: projects.map(project => ({
-      ...project,
-      demands: Array.isArray(project.demands) ? project.demands.map(migrateLegacyDemand) : [],
-      phaseCosts: Array.isArray(project.phaseCosts) ? project.phaseCosts : [],
-      gateHistory: Array.isArray(project.gateHistory) ? project.gateHistory : []
-    })),
+    projects: projects.map(project => {
+      const phasePlan = migratePhaseResponsibilities(project);
+      const currentPhaseKey = project.currentPhaseKey || project.phaseKey || "";
+      const currentAssignee = phasePlan.find(row => row.phaseKey === currentPhaseKey)?.assignee || "";
+      return {
+        ...project,
+        currentAssignee,
+        phasePlan,
+        demands: Array.isArray(project.demands) ? project.demands.map(migrateLegacyDemand) : [],
+        phaseCosts: Array.isArray(project.phaseCosts) ? project.phaseCosts : [],
+        gateHistory: Array.isArray(project.gateHistory) ? project.gateHistory : []
+      };
+    }),
     capacities: (Array.isArray(source.capacities) ? source.capacities : []).map(migrateCapacity),
     deletedIds: Array.isArray(source.deletedIds) ? source.deletedIds : [],
     auditLog: Array.isArray(source.auditLog) ? source.auditLog : []
