@@ -20,6 +20,8 @@ Die langfristige Objekt-, Investitions-, Finanzierungs- und Cashflowplanung blei
 ### Ressourcen
 
 - Je Projektphase und Ressource wird genau ein Wert «Noch benötigte PT» erfasst.
+- Die operative Verantwortung wird für jede Projektphase separat festgelegt. Die Verantwortung der aktuellen Phase wird daraus automatisch abgeleitet und nicht doppelt gepflegt.
+- BK, BHB und die Stellvertretung werden als projektweite Rollen geführt. Sie sind keine Kapazitätsressourcen.
 - Bei zukünftigen Phasen ist dies der gesamte erwartete Bedarf. Bei laufenden Phasen ist es der Restbedarf ab dem aktuellen Monat.
 - Die Verfügbarkeit jeder Person oder Firma wird einmal pro Jahr in einer Maske mit zwölf Monatswerten erfasst.
 - Leer bedeutet ungeklärt. Eine bestätigte Null bedeutet nicht verfügbar.
