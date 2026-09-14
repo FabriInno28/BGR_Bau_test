@@ -4,6 +4,7 @@ import {
   SCHEMA_VERSION,
   assessResourceCapacity,
   csvSafe,
+  migratePhaseResponsibilities,
   migrateState,
   nullableNumberValue,
   phaseMonthWindow,
@@ -147,4 +148,50 @@ test("Bedarf verlangt Ressource und einen einzigen positiven Restwert", () => {
 test("CSV Formeln werden für Excel neutralisiert", () => {
   assert.equal(csvSafe("=1+1"), "'=1+1");
   assert.equal(csvSafe("Normale Eingabe"), "Normale Eingabe");
+});
+
+test("bisherige aktuelle Verantwortung wird der aktuellen Phase zugeordnet", () => {
+  const phasePlan = migratePhaseResponsibilities({
+    currentPhaseKey: "machbarkeit",
+    currentAssignee: "Iris Ammann",
+    phasePlan: [
+      { phaseKey: "anlass", status: "done", startQuarter: "2026-Q1", endQuarter: "2026-Q1" },
+      { phaseKey: "machbarkeit", status: "current", startQuarter: "2026-Q2", endQuarter: "2026-Q3" },
+      { phaseKey: "planung", status: "open", startQuarter: "", endQuarter: "" }
+    ]
+  });
+  assert.equal(phasePlan[0].assignee, "");
+  assert.equal(phasePlan[1].assignee, "Iris");
+  assert.equal(phasePlan[2].assignee, "");
+});
+
+test("bereits phasenweise erfasste Verantwortung bleibt erhalten", () => {
+  const phasePlan = migratePhaseResponsibilities({
+    currentPhaseKey: "machbarkeit",
+    currentAssignee: "Iris",
+    phasePlan: [
+      { phaseKey: "machbarkeit", assignee: "Alex" },
+      { phaseKey: "realisierung", assignee: "Tresto" }
+    ]
+  });
+  assert.equal(phasePlan[0].assignee, "Alex");
+  assert.equal(phasePlan[1].assignee, "TRESTO");
+});
+
+test("Schemamigration leitet die aktuelle Verantwortung aus dem Phasenplan ab", () => {
+  const migrated = migrateState({
+    schemaVersion: 5,
+    projects: [{
+      id: "p1",
+      currentPhaseKey: "planung",
+      currentAssignee: "Iris",
+      phasePlan: [
+        { phaseKey: "machbarkeit", assignee: "Alex" },
+        { phaseKey: "planung" }
+      ]
+    }]
+  });
+  assert.equal(migrated.schemaVersion, SCHEMA_VERSION);
+  assert.equal(migrated.projects[0].phasePlan[1].assignee, "Iris");
+  assert.equal(migrated.projects[0].currentAssignee, "Iris");
 });
