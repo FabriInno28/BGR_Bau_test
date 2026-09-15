@@ -1195,7 +1195,7 @@ $("#export-capacity").addEventListener("click", () => csv("BGR_BauRadar_Verbindl
   ["Arbeitsstand", "Name", "Monat", "Verfügbare PT", "Bestätigt", "Bestätigt am"],
   ...capacities().map(item => [state.mode === "scenario" ? activeWorkspace().name : "Scharfer Stand", item.name, item.month, item.pt ?? "", item.confirmed ? "ja" : "nein", item.confirmedAt || ""])
 ]));
-$("#export-money").addEventListener("click", () => csv("BGR_BauRadar_Geld_nach_Projektphase.csv", [
+$("#export-money").addEventListener("click", () => csv("BGR_BauRadar_Finanzen_nach_Projektphase.csv", [
   ["Arbeitsstand", "Projekt ID", "Objekt", "Projektphase", "Jahr", "Betrag CHF", "Qualität", "Quelle", "Informationsdatum"],
   ...projects().flatMap(project => project.phaseCosts.map(item => [state.mode === "scenario" ? activeWorkspace().name : "Scharfer Stand", project.id, project.object, phaseInfo(item.phaseKey).label, item.year, item.amount, COST_STATUSES.find(status => status.key === item.status)?.label || item.status, item.source || "", item.informationDate || ""]))
 ]));
