@@ -13,14 +13,14 @@
 <body>
   <header class="topbar">
     <a class="brand" href="#top" aria-label="BGR BauRadar"><img src="bgr-logo.png" alt="BGR"><span>BauRadar</span></a>
-    <nav aria-label="Schnellnavigation"><a href="#portfolio">Portfolio</a><a href="#ressourcen">Ressourcen</a><a href="#finanzen">Geld</a><a href="#export">Übergabe</a></nav>
+    <nav aria-label="Schnellnavigation"><a href="#portfolio">Portfolio</a><a href="#ressourcen">Ressourcen</a><a href="#finanzen">Finanzen</a><a href="#export">Übergabe</a></nav>
     <div class="top-actions"><span class="master-pill" id="mode-pill"><i></i>Scharfer Stand</span><select id="workspace-select" aria-label="Arbeitsstand wählen"><option value="sharp">Scharfer Stand</option></select><button class="button ghost" id="new-scenario">+ Szenario</button><button class="button ghost" id="undo" disabled>↶ Rückgängig</button><button class="button primary" id="new-project">+ Projekt</button></div>
   </header>
 
   <main id="top">
     <section class="hero shell">
       <div class="hero-copy"><p class="eyebrow">BGR BauRadar · rollende Bauplanung</p><h1>Heute sauber abbilden.<br><em>Morgen verlässlich planen.</em></h1><p>Die Mutterliste zeigt den aktuellen Projektstand. Im BauRadar planen wir für jedes Projekt alle Phasen, die benötigten Menschen, die finanziellen Mittel und die entscheidenden Übergänge.</p></div>
-      <div class="hero-rule"><span>Verbindliche Planungslogik</span><strong>Kein Phasenstart ohne geklärte Verantwortung, personelle Kapazität, Geld und Termin.</strong><small>Verfügbarkeit wird monatlich erfasst. Bedarf und Entscheide bleiben phasenbezogen. Es gibt keine automatische Verteilung.</small></div>
+      <div class="hero-rule"><span>Verbindliche Planungslogik</span><strong>Kein Phasenstart ohne geklärte Verantwortung, personelle Kapazität, Finanzen und Termin.</strong><small>Verfügbarkeit wird monatlich erfasst. Bedarf und Entscheide bleiben phasenbezogen. Es gibt keine automatische Verteilung.</small></div>
     </section>
 
     <section class="shell pulse" aria-label="Portfolio Kennzahlen"><div class="pulse-title"><span>Portfolio heute</span><small id="data-state">aktueller Stand Mutterliste</small></div><div class="kpis" id="kpis"></div></section>
@@ -54,17 +54,17 @@
     </div></section>
 
     <section class="shell section finance-section" id="finanzen">
-      <div class="section-head compact"><div><p class="eyebrow">Geld nach Projektphasen</p><h2>Nur qualifizierte Kosten steuern.</h2><p>Ein Wert wird je Projektphase und Jahr erfasst. Schätzungen bleiben sichtbar. Freigegebene und gebundene Beträge werden separat ausgewiesen.</p></div></div>
+      <div class="section-head compact"><div><p class="eyebrow">Finanzen nach Projektphasen</p><h2>Nur qualifizierte Kosten steuern.</h2><p>Ein Wert wird je Projektphase und Jahr erfasst. Schätzungen bleiben sichtbar. Freigegebene und gebundene Beträge werden separat ausgewiesen.</p></div></div>
       <div class="finance-horizons" id="finance-horizons"></div>
       <div class="finance-grid"><article class="finance-chart-card"><div class="card-head"><div><strong>Jahressicht Portfolio</strong><span>Schätzung, budgetiert, freigegeben und vertraglich gebunden</span></div></div><div id="finance-chart" class="finance-chart"></div><div class="finance-legend" id="finance-legend"></div></article><article class="gate-card"><span class="gate-number">2</span><div><strong>Grosse Entscheide</strong><p>Nach der Machbarkeitsstudie und nach der Planung wird der Gesamtvorstand einbezogen.</p><small>Machbarkeit: Kostengenauigkeit ±25 Prozent. Projektfreigabe: ±10 Prozent.</small></div></article></div>
     </section>
 
-    <section class="export-band" id="export"><div class="shell export-grid"><div><p class="eyebrow">Sicherung und kontrollierte Übergabe</p><h2>Excel ist die lesbare Sicherung. JSON stellt den ganzen Stand wieder her.</h2><p>Der Pilot speichert weiterhin nur in diesem Browser. Deshalb nach jeder Arbeitssitzung eine vollständige Sicherung herunterladen.</p><input id="import-backup" type="file" accept="application/json,.json" hidden></div><div class="export-actions"><button class="button light" id="export-backup">Vollsicherung JSON</button><button class="button light" id="import-backup-button">Sicherung einlesen</button><button class="button light" id="export-projects">Projekte und Phasen</button><button class="button light" id="export-resources">Ressourcenbedarf</button><button class="button light" id="export-money">Geld nach Phase</button><button class="button light" id="export-changes">Änderungen</button><button class="button danger-light" id="reset-all">Planung zurücksetzen</button></div></div></section>
+    <section class="export-band" id="export"><div class="shell export-grid"><div><p class="eyebrow">Sicherung und kontrollierte Übergabe</p><h2>Excel ist die lesbare Sicherung. JSON stellt den ganzen Stand wieder her.</h2><p>Der Pilot speichert weiterhin nur in diesem Browser. Deshalb nach jeder Arbeitssitzung eine vollständige Sicherung herunterladen.</p><input id="import-backup" type="file" accept="application/json,.json" hidden></div><div class="export-actions"><button class="button light" id="export-backup">Vollsicherung JSON</button><button class="button light" id="import-backup-button">Sicherung einlesen</button><button class="button light" id="export-projects">Projekte und Phasen</button><button class="button light" id="export-resources">Ressourcenbedarf</button><button class="button light" id="export-money">Finanzen nach Phase</button><button class="button light" id="export-changes">Änderungen</button><button class="button danger-light" id="reset-all">Planung zurücksetzen</button></div></div></section>
   </main>
 
   <dialog id="project-dialog" class="dialog wide"><form method="dialog" id="project-form">
     <div class="dialog-head"><div><p class="eyebrow">Projekt planen</p><h2 id="project-dialog-title">Projekt</h2></div><button class="close" value="cancel" aria-label="Schliessen">×</button></div><input type="hidden" id="project-id">
-    <div class="dialog-tabs"><button type="button" class="active" data-form-tab="base">Grunddaten</button><button type="button" data-form-tab="phases">Phasenplan</button><button type="button" data-form-tab="roles">Rollen</button><button type="button" data-form-tab="resources">Ressourcen</button><button type="button" data-form-tab="money">Geld</button><button type="button" data-form-tab="gates">Phasentore</button></div>
+    <div class="dialog-tabs"><button type="button" class="active" data-form-tab="base">Grunddaten</button><button type="button" data-form-tab="phases">Phasenplan</button><button type="button" data-form-tab="roles">Rollen</button><button type="button" data-form-tab="resources">Ressourcen</button><button type="button" data-form-tab="money">Finanzen</button><button type="button" data-form-tab="gates">Phasentore</button></div>
 
     <div class="form-panel" data-panel="base">
       <div class="mother-box"><span>Aktueller Stand Mutterliste</span><strong id="mother-state">offen</strong><small>Dieser Wert beschreibt den heutigen Stand. Die zukünftigen Phasen werden separat geplant.</small></div>
