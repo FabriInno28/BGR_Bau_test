@@ -20,7 +20,7 @@
   <main id="top">
     <section class="hero shell">
       <div class="hero-copy"><p class="eyebrow">BGR BauRadar · rollende Bauplanung</p><h1>Heute sauber abbilden.<br><em>Morgen verlässlich planen.</em></h1><p>Die Mutterliste zeigt den aktuellen Projektstand. Im BauRadar planen wir für jedes Projekt alle Phasen, die benötigten Menschen, die finanziellen Mittel und die entscheidenden Übergänge.</p></div>
-      <div class="hero-rule"><span>Verbindliche Planungslogik</span><strong>Kein Phasenstart ohne geklärte Verantwortung, personelle Kapazität, Finanzen und Termin.</strong><small>Verfügbarkeit wird monatlich erfasst. Bedarf und Entscheide bleiben phasenbezogen. Es gibt keine automatische Verteilung.</small></div>
+      <div class="hero-rule"><span>Verbindliche Planungslogik</span><strong>Kein Phasenstart ohne geklärte Verantwortung, personelle Kapazität und Termin.</strong><small>Offene Finanzen bleiben sichtbar, sind aber keine Voraussetzung für eine Freigabe. Verfügbarkeit wird monatlich erfasst. Es gibt keine automatische Verteilung.</small></div>
     </section>
 
     <section class="shell pulse" aria-label="Portfolio Kennzahlen"><div class="pulse-title"><span>Portfolio und Planung</span><small id="data-state">aktueller Stand Mutterliste</small></div><div class="kpis" id="kpis"></div></section>
@@ -54,7 +54,7 @@
     </div></section>
 
     <section class="shell section finance-section" id="finanzen">
-      <div class="section-head compact"><div><p class="eyebrow">Finanzen des Gesamtportfolios</p><h2>Projektweit nach Jahren planen.</h2><p>Finanzen sind kein Freigabe Muss. Wo Werte vorhanden sind, werden sie pro Projekt und Jahr mit Qualität, Quelle und Informationsdatum geführt. Fehlende Werte bleiben als Hinweis sichtbar.</p></div></div>
+      <div class="section-head compact"><div><p class="eyebrow">Finanzen des Gesamtportfolios</p><h2>Projektweit nach Jahren planen.</h2><p>Finanzen sind keine Voraussetzung für eine Freigabe. Wo Werte vorhanden sind, werden sie pro Projekt und Jahr mit Qualität, Quelle und Informationsdatum geführt. Fehlende Werte bleiben als Hinweis sichtbar.</p></div></div>
       <div class="finance-horizons" id="finance-horizons"></div>
       <div class="finance-grid"><article class="finance-chart-card"><div class="card-head"><div><strong>Jahressicht Portfolio</strong><span>Schätzung, budgetiert, freigegeben und vertraglich gebunden</span></div></div><div id="finance-chart" class="finance-chart"></div><div class="finance-legend" id="finance-legend"></div></article><article class="gate-card"><span class="gate-number">2</span><div><strong>Grosse Entscheide</strong><p>Nach der Machbarkeitsstudie und nach der Planung wird der Gesamtvorstand einbezogen.</p><small>Machbarkeit: Kostengenauigkeit ±25 Prozent. Projektfreigabe: ±10 Prozent.</small></div></article></div>
     </section>
@@ -84,7 +84,7 @@
 
     <div class="form-panel hidden" data-panel="resources"><div class="repeat-head"><div><strong>Restbedarf dieses Projekts</strong><span>Je Person oder Firma und Projektphase wird genau ein Wert erfasst.</span></div><button type="button" class="button ghost" id="add-demand">+ Ressourcenbedarf</button></div><div class="edit-table" id="demand-editor"></div><p class="input-note">Bei zukünftigen Phasen entspricht der Wert dem gesamten erwarteten Bedarf. Bei laufenden Phasen wird nur eingetragen, was ab heute noch benötigt wird. Das BauRadar verteilt nichts auf einzelne Monate.</p></div>
 
-    <div class="form-panel hidden" data-panel="money"><div class="mother-cost-note" id="mother-cost-note"></div><p class="input-note"><strong>Finanzen sind kein Muss Feld.</strong> Ein Projekt oder eine Phase kann auch ohne erfasste Finanzen freigegeben werden. Der BauRadar zeigt dann einen Hinweis. Wenn Finanzen erfasst werden, erfolgt dies projektweit pro Jahr.</p><div class="repeat-head"><div><strong>Finanzen des Gesamtprojekts nach Jahr</strong><span>Jeder Betrag erhält Qualität, Quelle und Informationsdatum. Nur freigegebene und gebundene Werte gelten als gesichert.</span></div><button type="button" class="button ghost" id="add-finance">+ Finanzwert</button></div><div class="edit-table" id="finance-editor"></div></div>
+    <div class="form-panel hidden" data-panel="money"><div class="mother-cost-note" id="mother-cost-note"></div><p class="input-note"><strong>Finanzen sind kein Pflichtfeld.</strong> Ein Projekt oder eine Phase kann auch ohne erfasste Finanzen freigegeben werden. Der BauRadar zeigt dann einen Hinweis. Wenn Finanzen erfasst werden, erfolgt dies projektweit pro Jahr.</p><div class="repeat-head"><div><strong>Finanzen des Gesamtprojekts nach Jahr</strong><span>Jeder Betrag erhält Qualität, Quelle und Informationsdatum. Nur freigegebene und gebundene Werte gelten als gesichert.</span></div><button type="button" class="button ghost" id="add-finance">+ Finanzwert</button></div><div class="edit-table" id="finance-editor"></div></div>
 
     <div class="form-panel hidden" data-panel="gates"><div class="repeat-head"><div><strong>Historie der Phasentore</strong><span>Entscheide werden protokolliert und nicht still überschrieben.</span></div><button type="button" class="button ghost" id="add-gate">+ Entscheid erfassen</button></div><div class="edit-table" id="gate-editor"></div></div>
 

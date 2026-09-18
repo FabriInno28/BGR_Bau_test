@@ -13,7 +13,7 @@ Das BauRadar beantwortet die Umsetzungsfrage:
 - Welche projektweiten Finanzwerte stehen in welchem Jahr an und welche Qualität haben sie?
 - Was ist ein verbindlicher Stand und was ist nur ein Szenario?
 
-Die langfristige Objekt-, Investitions-, Finanzierungs- und Cashflowplanung bleibt im LUKB ImmoTool. Werte daraus können als Referenz sichtbar sein, werden aber nie automatisch mit den Finanzwerte addiert.
+Die langfristige Objekt-, Investitions-, Finanzierungs- und Cashflowplanung bleibt im LUKB ImmoTool. Werte daraus können als Referenz sichtbar sein, werden aber nie automatisch mit den Finanzwerten addiert.
 
 ## Verbindliche Fachlogik
 
@@ -34,12 +34,12 @@ Die langfristige Objekt-, Investitions-, Finanzierungs- und Cashflowplanung blei
 - Sind alle Monate des Phasenfensters bestätigt und stehen 24 PT Bedarf nur 9 PT Verfügbarkeit gegenüber, wird die Ressourcenlage rot. Die ausgewiesene Mindestlücke beträgt 15 PT.
 - Nach dem Speichern eines Projekts oder einer Jahresverfügbarkeit springt die Oberfläche bei einer Lücke direkt zur betroffenen Ressource und zeigt die Warnung sichtbar an.
 - Iris, Alex, Fabri, TRESTO, Büro 8 und externer Partner sind Kapazitätsressourcen.
-- BK und BHB sind Rollen beziehungsweise Gremien und werden nicht mit Personentagen belastet.
+- Geschäftsstelle, BK und BHB können Verantwortung tragen. Sie werden nicht als Kapazitätsressourcen mit Personentagen belastet.
 - Pro Ressource und Monat ist nur ein Verfügbarkeitseintrag erlaubt.
 
 ### Finanzen
 
-Finanzen sind im BauRadar bewusst **kein Muss Feld** und blockieren keine Projekt oder Phasenfreigabe. Fehlen Finanzwerte, zeigt der BauRadar einen Hinweis.
+Finanzen sind im BauRadar bewusst **kein Pflichtfeld**. Sie sind keine Voraussetzung für die Freigabe eines Projekts oder einer Phase. Fehlen Finanzwerte, zeigt der BauRadar einen Hinweis.
 
 Wenn Finanzen erfasst werden, gelten sie für das Gesamtprojekt und werden pro Jahr geführt mit Betrag, Qualität, Quelle und Informationsdatum. Nur freigegebene und vertraglich gebundene Werte werden als finanziell gesichert ausgewiesen. Referenzwerte aus ImmoTool oder Excel werden weiterhin nicht automatisch addiert.
 
@@ -73,7 +73,7 @@ Die kontrollierte Übernahme einzelner Szenarioänderungen in den scharfen Stand
 
 Der Pilot speichert weiterhin im lokalen Browser. Er ist noch keine Mehrbenutzeranwendung. Wird derselbe Stand in zwei Browser Tabs geöffnet und in einem Tab verändert, lädt der zweite Tab neu, bevor ein alter Stand die neueren Daten überschreiben kann.
 
-Nach jeder Arbeitssitzung sollte eine **Vollsicherung JSON** heruntergeladen werden. Nur diese Datei kann den gesamten Stand einschliesslich Szenarien, Ressourcen, Phasentoren und Änderungsprotokoll verlustfrei wiederherstellen.
+Nach jeder Arbeitssitzung sollte eine **Vollsicherung JSON** heruntergeladen werden. Nur diese Datei kann den gesamten Stand einschliesslich Szenarien, Ressourcen, Phasentoren und Arbeitsprotokoll verlustfrei wiederherstellen.
 
 CSV-Dateien sind lesbare Exporte für Excel. Sie sind kein vollständiges Wiederherstellungsformat.
 

@@ -64,10 +64,11 @@ const PHASE_STATUS = {
   current: "Aktuell",
   done: "Abgeschlossen"
 };
-const STORE_KEY = "bgr-bauradar-v5";
-const PREVIOUS_STORE_KEY = "bgr-bauradar-v4";
+const STORE_KEY = "bgr-bauradar-v7";
+const PREVIOUS_STORE_KEY = "bgr-bauradar-v5";
+const OLDER_STORE_KEY = "bgr-bauradar-v4";
 const LEGACY_STORE_KEY = "bgr-portfolio-cockpit-v3";
-const HISTORY_KEY = "bgr-bauradar-v5-history";
+const HISTORY_KEY = "bgr-bauradar-v7-history";
 
 const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
@@ -232,7 +233,7 @@ function reconcileBaselineProjects(savedProjects, deletedIds = []) {
 }
 function loadState() {
   try {
-    const raw = localStorage.getItem(STORE_KEY) || localStorage.getItem(PREVIOUS_STORE_KEY) || localStorage.getItem(LEGACY_STORE_KEY);
+    const raw = localStorage.getItem(STORE_KEY) || localStorage.getItem(PREVIOUS_STORE_KEY) || localStorage.getItem(OLDER_STORE_KEY) || localStorage.getItem(LEGACY_STORE_KEY);
     if (!raw) return emptyState();
     const parsed = JSON.parse(raw);
     const migrated = migrateState(parsed, BASELINE);
@@ -331,8 +332,8 @@ let editGateHistory = [];
 function projects() { return activeWorkspace().projects; }
 function capacities() { return activeWorkspace().capacities; }
 function plannedPhases(project) { return project.phasePlan.filter(row => row.startQuarter && row.endQuarter); }
-function planAt(project, quarter) {
-  return project.phasePlan.find(row => row.startQuarter && row.endQuarter && qIndex(quarter) >= qIndex(row.startQuarter) && qIndex(quarter) <= qIndex(row.endQuarter)) || null;
+function plansAt(project, quarter) {
+  return project.phasePlan.filter(row => row.startQuarter && row.endQuarter && qIndex(quarter) >= qIndex(row.startQuarter) && qIndex(quarter) <= qIndex(row.endQuarter));
 }
 function phasePlanIssues(project) {
   const issues = [];
@@ -340,7 +341,7 @@ function phasePlanIssues(project) {
   project.phasePlan.forEach(row => {
     if (Boolean(row.startQuarter) !== Boolean(row.endQuarter)) issues.push(`${phaseInfo(row.phaseKey).short}: Start oder Ende fehlt`);
     if (row.startQuarter && row.endQuarter && qIndex(row.endQuarter) < qIndex(row.startQuarter)) issues.push(`${phaseInfo(row.phaseKey).short}: Ende vor Start`);
-    if (previousEnd != null && row.startQuarter && qIndex(row.startQuarter) <= previousEnd) issues.push(`${phaseInfo(row.phaseKey).short}: überschneidet vorherige Phase`);
+    if (previousEnd != null && row.startQuarter && qIndex(row.startQuarter) < previousEnd) issues.push(`${phaseInfo(row.phaseKey).short}: überschneidet vorherige Phase`);
     if (row.endQuarter) previousEnd = Math.max(previousEnd ?? 0, qIndex(row.endQuarter));
   });
   if (project.currentPhaseKey) {
@@ -566,10 +567,10 @@ function renderTimeline() {
     return `<div class="timeline-row ${project.id === selectedId ? "selected" : ""}" data-select="${esc(project.id)}">
       <div class="project-label"><strong>${esc(project.object)}</strong><span>${esc(project.measure)} · ${esc(project.kind)}</span>${issues.length ? '<i class="pressure-dot" title="Klärungsbedarf"></i>' : ""}</div>
       ${DISPLAY_QUARTERS.map(quarter => {
-        const phase = planAt(project, quarter);
+        const phases = plansAt(project, quarter);
         const mother = project.motherQuarter === quarter;
-        return `<div class="qcell">${phase
-          ? `<div class="phase-block ${phaseInfo(phase.phaseKey).className}" title="${esc(phaseInfo(phase.phaseKey).label)}">${phaseInfo(phase.phaseKey).short}</div>`
+        return `<div class="qcell">${phases.length
+          ? `<div class="phase-stack">${phases.map(phase => `<div class="phase-block ${phaseInfo(phase.phaseKey).className}" title="${esc(phaseInfo(phase.phaseKey).label)}">${phaseInfo(phase.phaseKey).short}</div>`).join("")}</div>`
           : mother
             ? `<div class="mother-marker ${phaseInfo(project.motherPhaseKey).className}" title="Mutterstand ${DATA_STAND_LABEL}: ${esc(phaseInfo(project.motherPhaseKey).label)}"></div>`
             : '<i class="empty-cell"></i>'}</div>`;
@@ -809,7 +810,7 @@ function syncEditors() {
     phaseKey: row.querySelector(".d-phase").value,
     remainingPt: row.querySelector(".d-remaining").value
   }));
-  editFinances = $("[data-finance]").map((row, index) => ({
+  editFinances = $$("[data-finance]").map((row, index) => ({
     id: editFinances[index]?.id || uuid("finance"),
     year: Number(row.querySelector(".pc-year").value),
     amount: row.querySelector(".pc-amount").value,
@@ -1073,7 +1074,7 @@ $("#finance-editor").addEventListener("click", event => {
   const button = event.target.closest("[data-remove-finance]");
   if (button) {
     syncEditors();
-    editFinances.splice(Number(button.dataset.removePhaseCost), 1);
+    editFinances.splice(Number(button.dataset.removeFinance), 1);
     renderFinanceEditor();
   }
 });
@@ -1102,7 +1103,8 @@ $("#project-form").addEventListener("submit", event => {
   if (phaseErrors.length || editorErrors.length) {
     const message = phaseErrors[0] || editorErrors[0];
     toast(message);
-    setFormTab(phaseErrors.length ? "phases" : "resources");
+    const targetTab = phaseErrors.length ? "phases" : message.startsWith("Finanzen") ? "money" : message.startsWith("Phasentor") ? "gates" : "resources";
+    setFormTab(targetTab);
     return;
   }
   const currentAssignee = editPhasePlan.find(row => row.phaseKey === currentPhaseKey)?.assignee || "";
@@ -1223,8 +1225,8 @@ $("#undo").addEventListener("click", () => {
   const previous = history.pop();
   if (!previous) return;
   state = previous.state;
-  localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
-  localStorage.setItem(STORE_KEY, JSON.stringify(state));
+  storeLocal(HISTORY_KEY, JSON.stringify(history));
+  storeLocal(STORE_KEY, JSON.stringify(state));
   selectedId = activeWorkspace().projects[0]?.id;
   renderAll();
   toast(`Rückgängig: ${previous.label}`);

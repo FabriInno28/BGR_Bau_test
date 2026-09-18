@@ -43,3 +43,5 @@
 .resource-assessment.open.unsecured{background:#fff4df;border-color:#d9a541;box-shadow:inset 5px 0 0 #d1a343}.resource-assessment.open.unsecured .status-dot{background:#d1a343}.phase-resource-row.open.unsecured td{background:#fffaf0}.resource-status.open.unsecured{background:#f5e9c8;color:#81600b}.alert-strip.unsecured{background:#fff4df;border-color:#e2c275;color:#75560f}
 
 .finance-project-note{display:grid;gap:3px;margin:0 0 18px;padding:11px 12px;border-radius:12px;background:#e7f0ea;border:1px solid #c9d9ce}.finance-project-note.open{background:#f5edd8;border-color:#e0cf9f}.finance-project-note strong{font-size:12px}.finance-project-note span{font-size:10px;color:var(--muted)}
+
+.phase-stack{display:flex;flex-direction:column;gap:2px;width:100%}.phase-stack .phase-block{height:13px;font-size:7px}
