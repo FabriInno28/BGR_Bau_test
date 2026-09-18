@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 6;
+export const SCHEMA_VERSION = 7;
 
 export const CAPACITY_RESOURCES = [
   "Iris",
@@ -9,7 +9,7 @@ export const CAPACITY_RESOURCES = [
   "externer Partner"
 ];
 
-export const ROLE_OPTIONS = [...CAPACITY_RESOURCES, "BK", "BHB"];
+export const ROLE_OPTIONS = [...CAPACITY_RESOURCES, "Geschäftsstelle", "BK", "BHB"];
 
 export function clone(value) {
   return JSON.parse(JSON.stringify(value));
@@ -64,6 +64,7 @@ export function canonicalResourceName(value) {
     buro8: "Büro 8",
     externerpartner: "externer Partner",
     andereexternepartner: "externer Partner",
+    geschaftsstelle: "Geschäftsstelle",
     bk: "BK",
     baukommission: "BK",
     bhb: "BHB",
@@ -186,7 +187,11 @@ export function migrateState(saved, baselineProjects = []) {
         currentAssignee,
         phasePlan,
         demands: Array.isArray(project.demands) ? project.demands.map(migrateLegacyDemand) : [],
-        phaseCosts: Array.isArray(project.phaseCosts) ? project.phaseCosts : [],
+        finances: Array.isArray(project.finances)
+          ? project.finances
+          : (Array.isArray(project.phaseCosts)
+            ? project.phaseCosts.map(({ phaseKey, ...entry }) => ({ ...entry, legacyPhaseKey: phaseKey || "" }))
+            : []),
         gateHistory: Array.isArray(project.gateHistory) ? project.gateHistory : []
       };
     }),
@@ -200,10 +205,22 @@ export function validateDemand(demand) {
   const errors = [];
   const name = canonicalResourceName(demand.name);
   if (!name) errors.push("Ressource fehlt");
-  if (name && !CAPACITY_RESOURCES.includes(name)) errors.push("BK und BHB sind Rollen, keine Kapazitätsressourcen");
+  if (name && !CAPACITY_RESOURCES.includes(name)) errors.push("Diese Auswahl ist eine Rolle, keine Kapazitätsressource");
   const pt = nullableNumberValue(demand.remainingPt);
   if (pt == null) errors.push("Noch benötigte PT fehlen");
   else if (pt <= 0) errors.push("Noch benötigte PT müssen grösser als 0 sein");
+  return errors;
+}
+
+export function validateFinanceEntry(entry) {
+  const errors = [];
+  const amount = nullableNumberValue(entry.amount);
+  const year = Number(entry.year);
+  if (amount == null) errors.push("Betrag fehlt oder ist ungültig");
+  else if (amount <= 0) errors.push("Betrag muss grösser als 0 sein");
+  if (!Number.isInteger(year) || year < 2000 || year > 2200) errors.push("Jahr ist ungültig");
+  if (!String(entry.source || "").trim()) errors.push("Quelle fehlt");
+  if (!String(entry.informationDate || "").trim()) errors.push("Informationsdatum fehlt");
   return errors;
 }
 
