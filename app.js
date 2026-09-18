@@ -718,6 +718,10 @@ function costForYears(years, statuses = null) {
   return allFinanceEntries().filter(item => years.includes(Number(item.year)) && (!statuses || statuses.includes(item.status))).reduce((sum, item) => sum + num(item.amount), 0);
 }
 function renderFinance() {
+  const withFinance = projects().filter(project => project.finances.length > 0).length;
+  const withoutFinance = projects().length - withFinance;
+  $("#finance-coverage").innerHTML = `<strong>${withFinance} Projekte mit Finanzplanung</strong><span>${withoutFinance} Projekte ohne Finanzplanung · Hinweis, keine Freigabesperre</span>`;
+  $("#finance-coverage").classList.toggle("complete", withoutFinance === 0);
   const horizons = [
     { label: "0 bis 1 Jahr", years: [CURRENT_YEAR, CURRENT_YEAR + 1] },
     { label: "2 bis 3 Jahre", years: [CURRENT_YEAR + 2, CURRENT_YEAR + 3] },
