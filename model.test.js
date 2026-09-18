@@ -10,6 +10,7 @@ import {
   phaseMonthWindow,
   validateDemand,
   validateFinanceEntry,
+  validatePhaseTransitions,
   ROLE_OPTIONS
 } from "./model.js";
 
@@ -216,4 +217,39 @@ test("Finanzen sind optional, erfasste Finanzwerte müssen aber vollständig sei
   assert.deepEqual(validateFinanceEntry({ year: 2027, amount: "100000", source: "Budget", informationDate: "2026-09-18" }), []);
   assert.match(validateFinanceEntry({ year: 2027, amount: "", source: "", informationDate: "" })[0], /Betrag/);
   assert.match(validateFinanceEntry({ year: 2027, amount: "-1", source: "Budget", informationDate: "2026-09-18" })[0], /grösser/);
+});
+
+test("geplanter Phasenwechsel braucht einen freigebenden Phasentorentscheid", () => {
+  const issues = validatePhaseTransitions({
+    currentPhaseKey: "planerwahl",
+    phasePlan: [
+      { phaseKey: "machbarkeit", status: "done", startQuarter: "2026-Q3", endQuarter: "2026-Q4" },
+      { phaseKey: "planerwahl", status: "current", startQuarter: "2027-Q1", endQuarter: "2027-Q1" }
+    ],
+    gateHistory: []
+  });
+  assert.equal(issues[0].type, "notApproved");
+  assert.equal(issues[0].phaseKey, "machbarkeit");
+});
+
+test("grosse Phasentore verlangen den Gesamtvorstand", () => {
+  const wrong = validatePhaseTransitions({
+    currentPhaseKey: "planerwahl",
+    phasePlan: [
+      { phaseKey: "machbarkeit", status: "done", startQuarter: "2026-Q3", endQuarter: "2026-Q4" },
+      { phaseKey: "planerwahl", status: "current", startQuarter: "2027-Q1", endQuarter: "2027-Q1" }
+    ],
+    gateHistory: [{ phaseKey: "machbarkeit", status: "freigegeben", authority: "BK", date: "2026-12-15" }]
+  });
+  assert.equal(wrong[0].type, "wrongAuthority");
+
+  const ok = validatePhaseTransitions({
+    currentPhaseKey: "planerwahl",
+    phasePlan: [
+      { phaseKey: "machbarkeit", status: "done", startQuarter: "2026-Q3", endQuarter: "2026-Q4" },
+      { phaseKey: "planerwahl", status: "current", startQuarter: "2027-Q1", endQuarter: "2027-Q1" }
+    ],
+    gateHistory: [{ phaseKey: "machbarkeit", status: "mit Auflagen", authority: "Gesamtvorstand", date: "2026-12-15" }]
+  });
+  assert.deepEqual(ok, []);
 });
