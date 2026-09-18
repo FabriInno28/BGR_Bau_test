@@ -45,3 +45,5 @@
 .finance-project-note{display:grid;gap:3px;margin:0 0 18px;padding:11px 12px;border-radius:12px;background:#e7f0ea;border:1px solid #c9d9ce}.finance-project-note.open{background:#f5edd8;border-color:#e0cf9f}.finance-project-note strong{font-size:12px}.finance-project-note span{font-size:10px;color:var(--muted)}
 
 .phase-stack{display:flex;flex-direction:column;gap:2px;width:100%}.phase-stack .phase-block{height:13px;font-size:7px}
+
+.finance-coverage{display:flex;align-items:center;justify-content:space-between;gap:16px;margin:0 0 14px;padding:12px 14px;border-radius:12px;background:#f5edd8;border:1px solid #e0cf9f}.finance-coverage.complete{background:#e7f0ea;border-color:#c9d9ce}.finance-coverage strong{font-size:12px}.finance-coverage span{font-size:11px;color:var(--muted)}@media(max-width:700px){.finance-coverage{align-items:flex-start;flex-direction:column;gap:3px}}
