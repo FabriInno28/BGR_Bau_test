@@ -16,7 +16,8 @@ import {
   resourceKey,
   uuid,
   validateDemand,
-  validateFinanceEntry
+  validateFinanceEntry,
+  validatePhaseTransitions
 } from "./model.js";
 
 const PHASES = [
@@ -379,6 +380,10 @@ function projectIssues(project) {
   }
   project.finances.forEach(finance => {
     if (validateFinanceEntry(finance).length) issues.push(`Finanzen ${finance.year || "Jahr offen"}: Angaben unvollständig`);
+  });
+  validatePhaseTransitions({ phasePlan: project.phasePlan, gateHistory: project.gateHistory, currentPhaseKey: project.currentPhaseKey }).forEach(issue => {
+    if (issue.type === "wrongAuthority") issues.push(`${phaseInfo(issue.phaseKey).short}: Phasentor braucht Entscheid Gesamtvorstand`);
+    else issues.push(`${phaseInfo(issue.phaseKey).short}: Phasentor nicht freigegeben`);
   });
   issues.push(...phasePlanIssues(project));
   return [...new Set(issues)];
@@ -835,6 +840,12 @@ function syncEditors() {
 }
 function validateProjectEditors() {
   const errors = [];
+  for (const phase of editPhasePlan) {
+    if (!phase.startQuarter || !phase.endQuarter) continue;
+    if (!phase.assignee) errors.push(`${phaseInfo(phase.phaseKey).short}: Verantwortung fehlt`);
+    const demands = editDemands.filter(demand => demand.phaseKey === phase.phaseKey);
+    if (!demands.length && phase.resourceClarification !== "none") errors.push(`${phaseInfo(phase.phaseKey).short}: Ressourcenbedarf noch nicht geklärt`);
+  }
   for (const demand of editDemands) {
     errors.push(...validateDemand(demand).map(error => `${demand.name || "Ressource"}: ${error}`));
   }
@@ -846,6 +857,10 @@ function validateProjectEditors() {
   for (const gate of editGateHistory.filter(item => !item.persisted)) {
     if (!gate.date || !gate.reason) errors.push("Phasentor: Datum und Kurzbegründung sind Pflicht");
   }
+  validatePhaseTransitions({ phasePlan: editPhasePlan, gateHistory: editGateHistory, currentPhaseKey: $("#f-phase").value }).forEach(issue => {
+    if (issue.type === "wrongAuthority") errors.push(`Phasentor ${phaseInfo(issue.phaseKey).short}: Entscheid des Gesamtvorstands erforderlich`);
+    else errors.push(`Phasentor ${phaseInfo(issue.phaseKey).short}: Freigabe fehlt`);
+  });
   return errors;
 }
 function openProject(id, newProject = false) {
@@ -1103,7 +1118,15 @@ $("#project-form").addEventListener("submit", event => {
   if (phaseErrors.length || editorErrors.length) {
     const message = phaseErrors[0] || editorErrors[0];
     toast(message);
-    const targetTab = phaseErrors.length ? "phases" : message.startsWith("Finanzen") ? "money" : message.startsWith("Phasentor") ? "gates" : "resources";
+    const targetTab = phaseErrors.length
+      ? "phases"
+      : message.startsWith("Finanzen")
+        ? "money"
+        : message.startsWith("Phasentor")
+          ? "gates"
+          : (message.includes("Verantwortung") || message.includes("Ressourcenbedarf"))
+            ? "phases"
+            : "resources";
     setFormTab(targetTab);
     return;
   }
