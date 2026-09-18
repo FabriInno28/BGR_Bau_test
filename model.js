@@ -205,7 +205,7 @@ export function validateDemand(demand) {
   const errors = [];
   const name = canonicalResourceName(demand.name);
   if (!name) errors.push("Ressource fehlt");
-  if (name && !CAPACITY_RESOURCES.includes(name)) errors.push("Diese Auswahl ist eine Rolle, keine Kapazitätsressource");
+  if (name && !CAPACITY_RESOURCES.includes(name)) errors.push("Diese Auswahl gehört zu den Rollen und ist keine Kapazitätsressource");
   const pt = nullableNumberValue(demand.remainingPt);
   if (pt == null) errors.push("Noch benötigte PT fehlen");
   else if (pt <= 0) errors.push("Noch benötigte PT müssen grösser als 0 sein");
@@ -222,6 +222,33 @@ export function validateFinanceEntry(entry) {
   if (!String(entry.source || "").trim()) errors.push("Quelle fehlt");
   if (!String(entry.informationDate || "").trim()) errors.push("Informationsdatum fehlt");
   return errors;
+}
+
+export function validatePhaseTransitions({ phasePlan = [], gateHistory = [], currentPhaseKey = "" } = {}) {
+  const issues = [];
+  for (let index = 0; index < phasePlan.length - 1; index += 1) {
+    const phase = phasePlan[index];
+    const next = phasePlan[index + 1];
+    const transitionRelevant = phase?.status === "done"
+      && phase.startQuarter
+      && phase.endQuarter
+      && (next?.startQuarter || next?.phaseKey === currentPhaseKey);
+    if (!transitionRelevant) continue;
+
+    const latest = gateHistory
+      .filter(gate => gate.phaseKey === phase.phaseKey)
+      .slice()
+      .sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")))[0];
+
+    if (!latest || !["freigegeben", "mit Auflagen"].includes(latest.status)) {
+      issues.push({ phaseKey: phase.phaseKey, type: "notApproved" });
+      continue;
+    }
+    if (["machbarkeit", "planung"].includes(phase.phaseKey) && latest.authority !== "Gesamtvorstand") {
+      issues.push({ phaseKey: phase.phaseKey, type: "wrongAuthority", authority: latest.authority });
+    }
+  }
+  return issues;
 }
 
 function betterBottleneck(candidate, current) {
