@@ -1,4 +1,4 @@
-import { BASELINE_PROJECTS } from "./projects-data.js";
+import { BASELINE_META, BASELINE_PROJECTS } from "./projects-data.js";
 import {
   CAPACITY_RESOURCES,
   ROLE_OPTIONS,
@@ -15,7 +15,8 @@ import {
   quarterIndex,
   resourceKey,
   uuid,
-  validateDemand
+  validateDemand,
+  validateFinanceEntry
 } from "./model.js";
 
 const PHASES = [
@@ -38,12 +39,19 @@ const COST_STATUSES = [
 const GATE_STATUSES = ["freigegeben", "mit Auflagen", "zurückgestellt", "gestoppt"];
 const GATE_AUTHORITIES = ["BK", "BHB", "Gesamtvorstand", "Geschäftsstelle"];
 const MONTH_NAMES = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"];
-const START_QUARTER = "2026-Q3";
-const DISPLAY_QUARTERS = makeQuarters(START_QUARTER, 12);
-const ALL_QUARTERS = makeQuarters("2026-Q1", 44);
-const YEARS = Array.from({ length: 11 }, (_, index) => 2026 + index);
 const TODAY = new Date();
-const CURRENT_MONTH = `${TODAY.getFullYear()}-${String(TODAY.getMonth() + 1).padStart(2, "0")}`;
+const CURRENT_YEAR = TODAY.getFullYear();
+const CURRENT_QUARTER = `${CURRENT_YEAR}-Q${Math.floor(TODAY.getMonth() / 3) + 1}`;
+const CURRENT_MONTH = `${CURRENT_YEAR}-${String(TODAY.getMonth() + 1).padStart(2, "0")}`;
+const START_QUARTER = CURRENT_QUARTER;
+const DISPLAY_QUARTERS = makeQuarters(START_QUARTER, 12);
+const ALL_QUARTERS = makeQuarters(`${CURRENT_YEAR}-Q1`, 44);
+const YEARS = Array.from({ length: 11 }, (_, index) => CURRENT_YEAR + index);
+const BASELINE_VERSION = BASELINE_META.version;
+const BASELINE_DATE = BASELINE_META.date;
+const [BASELINE_YEAR, BASELINE_MONTH] = BASELINE_DATE.split("-").map(Number);
+const BASELINE_QUARTER = `${BASELINE_YEAR}-Q${Math.ceil(BASELINE_MONTH / 3)}`;
+const DATA_STAND_LABEL = BASELINE_DATE.split("-").reverse().join(".");
 const RESOURCE_STATUS = {
   ok: { label: "Rechnerisch tragbar", short: "tragbar" },
   watch: { label: "Kapazität knapp", short: "knapp" },
@@ -135,7 +143,8 @@ function defaultPhasePlan(currentKey, currentAssignee = "") {
     status: index < current ? "done" : index === current ? "current" : "open",
     startQuarter: "",
     endQuarter: "",
-    assignee: phase.key === currentKey && ROLE_OPTIONS.includes(currentAssignee) ? currentAssignee : ""
+    assignee: phase.key === currentKey && ROLE_OPTIONS.includes(currentAssignee) ? currentAssignee : "",
+    resourceClarification: "open"
   }));
 }
 function rawMotherCost(project) {
@@ -153,9 +162,10 @@ function normalizeProject(project) {
     currentPhaseKey,
     currentAssignee: inferredAssignee
   });
-  const phasePlan = migratedPhasePlan.length === PHASES.length
+  const phasePlan = (migratedPhasePlan.length === PHASES.length
     ? migratedPhasePlan
-    : defaultPhasePlan(currentPhaseKey, inferredAssignee);
+    : defaultPhasePlan(currentPhaseKey, inferredAssignee))
+    .map(row => ({ ...row, resourceClarification: row.resourceClarification === "none" ? "none" : "open" }));
   const currentAssignee = phasePlan.find(row => row.phaseKey === currentPhaseKey)?.assignee || "";
   return {
     ...clone(project),
@@ -168,10 +178,10 @@ function normalizeProject(project) {
     motherPhaseKey,
     currentPhaseKey,
     currentAssignee,
-    motherQuarter: project.motherQuarter || ((parseInt(project.startYear, 10) || 2026) > 2026 ? `${project.startYear}-Q1` : START_QUARTER),
+    motherQuarter: project.motherQuarter || BASELINE_QUARTER,
     roles: project.roles || inferRoles(project),
     phasePlan,
-    phaseCosts: Array.isArray(project.phaseCosts) ? project.phaseCosts : [],
+    finances: Array.isArray(migrated.finances) ? migrated.finances : [],
     gateHistory: Array.isArray(project.gateHistory) ? project.gateHistory : []
   };
 }
@@ -181,6 +191,7 @@ const BASELINE = BASELINE_PROJECTS.map(normalizeProject);
 function emptyState() {
   return {
     schemaVersion: SCHEMA_VERSION,
+    baselineVersion: BASELINE_VERSION,
     mode: "sharp",
     activeScenarioId: null,
     projects: clone(BASELINE),
@@ -198,15 +209,38 @@ function normalizeWorkspace(workspace) {
     scenarios: undefined
   };
 }
+function reconcileBaselineProjects(savedProjects, deletedIds = []) {
+  const savedById = new Map(savedProjects.map(project => [project.id, normalizeProject(project)]));
+  const deleted = new Set(deletedIds);
+  const refreshed = BASELINE.filter(project => !deleted.has(project.id)).map(base => {
+    const saved = savedById.get(base.id);
+    if (!saved) return clone(base);
+    return normalizeProject({
+      ...clone(base),
+      kind: saved.kind,
+      currentPhaseKey: saved.currentPhaseKey,
+      roles: clone(saved.roles),
+      phasePlan: clone(saved.phasePlan),
+      demands: clone(saved.demands),
+      finances: clone(saved.finances),
+      gateHistory: clone(saved.gateHistory),
+      nextDecision: saved.nextDecision
+    });
+  });
+  const localOnly = savedProjects.filter(project => !BASELINE.some(base => base.id === project.id)).map(normalizeProject);
+  return [...refreshed, ...localOnly];
+}
 function loadState() {
   try {
     const raw = localStorage.getItem(STORE_KEY) || localStorage.getItem(PREVIOUS_STORE_KEY) || localStorage.getItem(LEGACY_STORE_KEY);
     if (!raw) return emptyState();
     const parsed = JSON.parse(raw);
     const migrated = migrateState(parsed, BASELINE);
+    const baselineChanged = parsed.baselineVersion !== BASELINE_VERSION;
     return {
       ...migrated,
-      projects: migrated.projects.map(normalizeProject),
+      baselineVersion: BASELINE_VERSION,
+      projects: baselineChanged ? reconcileBaselineProjects(migrated.projects, migrated.deletedIds) : migrated.projects.map(normalizeProject),
       scenarios: (migrated.scenarios || []).map(scenario => ({
         ...scenario,
         ...normalizeWorkspace(scenario)
@@ -227,11 +261,29 @@ function activeWorkspace() {
   }
   return state;
 }
+function storeLocal(key, value) {
+  try {
+    localStorage.setItem(key, value);
+    return true;
+  } catch (error) {
+    console.error("Lokale Speicherung fehlgeschlagen", error);
+    return false;
+  }
+}
 function save(label = "") {
   state.schemaVersion = SCHEMA_VERSION;
-  localStorage.setItem(STORE_KEY, JSON.stringify(state));
+  state.baselineVersion = BASELINE_VERSION;
+  if (!storeLocal(STORE_KEY, JSON.stringify(state))) {
+    history = [];
+    localStorage.removeItem(HISTORY_KEY);
+    if (!storeLocal(STORE_KEY, JSON.stringify(state))) {
+      toast("Lokaler Speicher ist voll. Bitte Vollsicherung erstellen und Browserdaten bereinigen.", "gap", 10000);
+      return false;
+    }
+  }
   if (label) addAudit(label);
   renderAll();
+  return true;
 }
 function addAudit(action, detail = "") {
   activeWorkspace().auditLog.push({
@@ -240,12 +292,15 @@ function addAudit(action, detail = "") {
     action,
     detail
   });
-  localStorage.setItem(STORE_KEY, JSON.stringify(state));
+  storeLocal(STORE_KEY, JSON.stringify(state));
 }
 function snapshot(label) {
   history.push({ label, state: clone(state) });
-  history = history.slice(-30);
-  localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+  history = history.slice(-12);
+  if (!storeLocal(HISTORY_KEY, JSON.stringify(history))) {
+    history = history.slice(-3);
+    storeLocal(HISTORY_KEY, JSON.stringify(history));
+  }
 }
 function download(name, content, type) {
   const blob = new Blob([content], { type });
@@ -270,7 +325,7 @@ let selectedId = activeWorkspace().projects[0]?.id;
 let longOpen = false;
 let editPhasePlan = [];
 let editDemands = [];
-let editPhaseCosts = [];
+let editFinances = [];
 let editGateHistory = [];
 
 function projects() { return activeWorkspace().projects; }
@@ -285,16 +340,27 @@ function phasePlanIssues(project) {
   project.phasePlan.forEach(row => {
     if (Boolean(row.startQuarter) !== Boolean(row.endQuarter)) issues.push(`${phaseInfo(row.phaseKey).short}: Start oder Ende fehlt`);
     if (row.startQuarter && row.endQuarter && qIndex(row.endQuarter) < qIndex(row.startQuarter)) issues.push(`${phaseInfo(row.phaseKey).short}: Ende vor Start`);
-    if (previousEnd != null && row.startQuarter && qIndex(row.startQuarter) < previousEnd) issues.push(`${phaseInfo(row.phaseKey).short}: überschneidet vorherige Phase`);
+    if (previousEnd != null && row.startQuarter && qIndex(row.startQuarter) <= previousEnd) issues.push(`${phaseInfo(row.phaseKey).short}: überschneidet vorherige Phase`);
     if (row.endQuarter) previousEnd = Math.max(previousEnd ?? 0, qIndex(row.endQuarter));
   });
+  if (project.currentPhaseKey) {
+    const currentRows = project.phasePlan.filter(row => row.status === "current");
+    const selected = project.phasePlan.find(row => row.phaseKey === project.currentPhaseKey);
+    if (currentRows.length > 1) issues.push("Mehr als eine Phase ist als aktuell markiert");
+    if (selected && selected.status !== "current") issues.push(`${phaseInfo(project.currentPhaseKey).short}: aktuelle Phase muss Status «Aktuell» haben`);
+  }
   return issues;
 }
 function projectIssues(project) {
   const issues = [];
+  if (project.uncertain) issues.push("Mutterdaten als unsicher markiert");
   project.phasePlan.forEach(row => {
     const responsibilityRelevant = row.phaseKey === project.currentPhaseKey || Boolean(row.startQuarter || row.endQuarter);
     if (responsibilityRelevant && !row.assignee) issues.push(`${phaseInfo(row.phaseKey).short}: Verantwortung offen`);
+    if (row.startQuarter && row.endQuarter) {
+      const phaseDemands = project.demands.filter(demand => demand.phaseKey === row.phaseKey);
+      if (!phaseDemands.length && row.resourceClarification !== "none") issues.push(`${phaseInfo(row.phaseKey).short}: Ressourcenbedarf noch nicht geklärt`);
+    }
   });
   if (!plannedPhases(project).length) issues.push("Phasenplan offen");
   if (project.kind === "Bauprojekt" && phaseIndex(project.currentPhaseKey) >= 1 && (!project.roles.bhb || project.roles.bhb.toLowerCase() === "offen")) issues.push("Bauherrenbegleitung offen");
@@ -310,15 +376,14 @@ function projectIssues(project) {
       if (status === "open") issues.push(`${phaseInfo(demand.phaseKey).short}: ${demand.name} Verfügbarkeit ungeklärt`);
     }
   }
-  project.phaseCosts.forEach(cost => {
-    if (!cost.source || !cost.informationDate) issues.push(`${phaseInfo(cost.phaseKey).short}: Kostenquelle oder Informationsdatum offen`);
+  project.finances.forEach(finance => {
+    if (validateFinanceEntry(finance).length) issues.push(`Finanzen ${finance.year || "Jahr offen"}: Angaben unvollständig`);
   });
-  if (plannedPhases(project).length && !project.phaseCosts.length) issues.push("Phasenkosten offen");
   issues.push(...phasePlanIssues(project));
-  return issues;
+  return [...new Set(issues)];
 }
 function securedCost(project) {
-  return project.phaseCosts.filter(item => ["approved", "bound"].includes(item.status)).reduce((sum, item) => sum + num(item.amount), 0);
+  return project.finances.filter(item => ["approved", "bound"].includes(item.status)).reduce((sum, item) => sum + num(item.amount), 0);
 }
 function changedProject(project) {
   const baseline = BASELINE.find(item => item.id === project.id);
@@ -422,7 +487,8 @@ function demandStatus(item) {
 }
 function phaseResourceStatus(project, phaseKey) {
   const items = allPhaseDemands().filter(item => item.project.id === project.id && item.demand.phaseKey === phaseKey);
-  if (!items.length) return "open";
+  const phase = project.phasePlan.find(row => row.phaseKey === phaseKey);
+  if (!items.length) return phase?.resourceClarification === "none" ? "ok" : "open";
   const severity = { ok: 0, watch: 1, open: 2, gap: 3 };
   return items.map(demandStatus).sort((a, b) => severity[b] - severity[a])[0];
 }
@@ -459,14 +525,17 @@ function renderHeader() {
   const planned = projects().reduce((sum, project) => sum + plannedPhases(project).length, 0);
   const assessments = allResourceAssessments();
   const gaps = assessments.filter(item => item.status === "gap").length;
-  const approved = allPhaseCosts().filter(item => item.status === "approved").reduce((sum, item) => sum + num(item.amount), 0);
-  const bound = allPhaseCosts().filter(item => item.status === "bound").reduce((sum, item) => sum + num(item.amount), 0);
+  const approved = allFinanceEntries().filter(item => item.status === "approved").reduce((sum, item) => sum + num(item.amount), 0);
+  const bound = allFinanceEntries().filter(item => item.status === "bound").reduce((sum, item) => sum + num(item.amount), 0);
   const changes = projects().filter(changedProject).length + workspace.deletedIds.length + capacities().length;
-  $("#data-state").textContent = state.mode === "scenario" ? `Szenario: ${workspace.name}` : (changes ? `${changes} lokale Planungsänderungen` : "Scharfer Stand");
+  $("#data-state").textContent = state.mode === "scenario"
+    ? `Szenario: ${workspace.name} · Basis Mutterstand ${DATA_STAND_LABEL}`
+    : (changes ? `${changes} lokale Planungsänderungen · Mutterstand ${DATA_STAND_LABEL}` : `Mutterstand ${DATA_STAND_LABEL}`);
   $("#mode-pill").innerHTML = `<i></i>${state.mode === "scenario" ? `Szenario: ${esc(workspace.name)}` : "Scharfer Stand"}`;
   $("#mode-pill").classList.toggle("scenario", state.mode === "scenario");
   $("#workspace-select").innerHTML = `<option value="sharp">Scharfer Stand</option>${state.scenarios.map(scenario => `<option value="${esc(scenario.id)}">${esc(scenario.name)}</option>`).join("")}`;
   $("#workspace-select").value = state.mode === "scenario" ? state.activeScenarioId : "sharp";
+  $("#delete-scenario").classList.toggle("hidden", state.mode !== "scenario");
   $("#kpis").innerHTML = [
     ["Vorhaben", projects().length, "im Portfolio"],
     ["Geplante Phasen", planned, `von ${projects().length * PHASES.length}`],
@@ -502,7 +571,7 @@ function renderTimeline() {
         return `<div class="qcell">${phase
           ? `<div class="phase-block ${phaseInfo(phase.phaseKey).className}" title="${esc(phaseInfo(phase.phaseKey).label)}">${phaseInfo(phase.phaseKey).short}</div>`
           : mother
-            ? `<div class="mother-marker ${phaseInfo(project.currentPhaseKey).className}" title="Mutterstand: ${esc(phaseInfo(project.currentPhaseKey).label)}"></div>`
+            ? `<div class="mother-marker ${phaseInfo(project.motherPhaseKey).className}" title="Mutterstand ${DATA_STAND_LABEL}: ${esc(phaseInfo(project.motherPhaseKey).label)}"></div>`
             : '<i class="empty-cell"></i>'}</div>`;
       }).join("")}
     </div>`;
@@ -511,11 +580,11 @@ function renderTimeline() {
   renderLongHorizon();
 }
 function renderLongHorizon() {
-  const years = [2030, 2031, 2032, 2033, 2034, 2035, 2036, "10+"];
+  const years = [...Array.from({ length: 7 }, (_, index) => CURRENT_YEAR + 4 + index), "10+"];
   $("#long-horizon").classList.toggle("hidden", !longOpen);
   $("#expand-long").textContent = longOpen ? "Jahre 4 bis 10 ausblenden" : "Jahre 4 bis 10 einblenden";
   $("#long-horizon").innerHTML = `<div class="long-title"><strong>Mittelfrist und Langfrist</strong><span>Phasen mit eingetragener Planung</span></div><div class="long-grid">${years.map(year => {
-    const entries = projects().flatMap(project => project.phasePlan.filter(row => row.startQuarter && (year === "10+" ? parseInt(row.startQuarter, 10) > 2036 : parseInt(row.startQuarter, 10) === year)).map(row => ({ project, row })));
+    const entries = projects().flatMap(project => project.phasePlan.filter(row => row.startQuarter && (year === "10+" ? parseInt(row.startQuarter, 10) > CURRENT_YEAR + 10 : parseInt(row.startQuarter, 10) === year)).map(row => ({ project, row })));
     return `<div class="year-bucket"><strong>${year === "10+" ? "> 10 Jahre" : year}</strong><b>${entries.length}</b><span>${entries.slice(0, 2).map(item => `${esc(item.project.object)} · ${phaseInfo(item.row.phaseKey).short}`).join(" · ") || "noch keine Phase geplant"}</span></div>`;
   }).join("")}</div>`;
 }
@@ -535,17 +604,19 @@ function renderDetail() {
   const resources = project.demands.slice(0, 4);
   $("#project-detail").innerHTML = `<div class="project-cover"><div class="meta"><span>${esc(project.kind)} · ${state.mode === "scenario" ? "Szenario" : "scharfer Stand"}</span><span class="status-chip">${issues.length ? `${issues.length} Punkte offen` : "Plan prüfbar"}</span></div><h3>${esc(project.object)}</h3><p>${esc(project.measure)}</p></div>
     <div class="project-body">
-      <div class="mother-current"><span>Stand Mutterliste</span><strong>${esc(phaseInfo(project.motherPhaseKey).label)}</strong><small>${phaseAssignee(project) ? `Verantwortung aktuelle Phase: ${esc(phaseAssignee(project))}` : "Verantwortung aktuelle Phase noch offen"}</small></div>
+      <div class="mother-current"><span>Mutterstand ${DATA_STAND_LABEL}</span><strong>${esc(phaseInfo(project.motherPhaseKey).label)}</strong><small>${project.uncertain ? "Quelle als unsicher markiert · " : ""}${phaseAssignee(project) ? `Verantwortung Arbeitsstand: ${esc(phaseAssignee(project))}` : "Verantwortung Arbeitsstand noch offen"}</small></div>
       <div class="next-box"><span>Letzter Phasentorentscheid</span><strong>${esc(latestGate?.status || "noch kein Entscheid erfasst")}</strong><small>${latestGate ? `${esc(phaseInfo(latestGate.phaseKey).short)} · ${esc(latestGate.authority)} · ${esc(latestGate.date)}` : "Im Projekt protokollieren"}</small></div>
       <span class="section-label">Alle Projektphasen</span>
       <div class="phase-steps">${PHASES.map(phase => {
         const row = project.phasePlan.find(item => item.phaseKey === phase.key);
         const resourceStatus = row?.startQuarter ? phaseResourceStatus(project, phase.key) : "open";
-        const statusText = project.demands.some(demand => demand.phaseKey === phase.key) ? RESOURCE_STATUS[resourceStatus].label : "Ressourcenbedarf offen";
+        const hasDemand = project.demands.some(demand => demand.phaseKey === phase.key);
+        const statusText = hasDemand ? RESOURCE_STATUS[resourceStatus].label : row?.resourceClarification === "none" ? "kein zusätzlicher Ressourcenbedarf" : "Ressourcenbedarf offen";
         const responsibility = row?.assignee ? `Verantwortung ${row.assignee}` : "Verantwortung offen";
         return `<button class="phase-step ${phase.className} resource-${resourceStatus} ${row?.startQuarter ? "done" : ""} ${phase.key === project.currentPhaseKey ? "current" : ""}" title="${esc(phase.label)} · ${responsibility} · ${row?.startQuarter ? `${qLabel(row.startQuarter)} bis ${qLabel(row.endQuarter)} · ${statusText}` : "noch nicht geplant"}" aria-label="${esc(phase.label)}: ${esc(responsibility)}, ${esc(statusText)}"></button>`;
       }).join("")}</div>
       <div class="perspectives"><div class="perspective"><span>Phasen geplant</span><strong>${planned.length} von 7</strong></div><div class="perspective"><span>Ressourcen</span><strong>${project.demands.length || "offen"}</strong></div><div class="perspective"><span>Freigegeben / gebunden</span><strong>${chf(securedCost(project), true)}</strong></div><div class="perspective"><span>Offene Punkte</span><strong>${issues.length}</strong></div></div>
+      <div class="finance-project-note ${project.finances.length ? "" : "open"}"><strong>${project.finances.length ? "Finanzplanung erfasst" : "Finanzen noch nicht erfasst"}</strong><span>${project.finances.length ? "Die Jahressicht ist im Bereich Finanzen sichtbar." : "Hinweis: Das blockiert weder Planung noch Freigabe."}</span></div>
       <span class="section-label">Ressourcen dieses Projekts</span>
       <div class="mini-resources">${resources.length ? resources.map(demand => {
         const item = allPhaseDemands().find(entry => entry.id === demand.id);
@@ -634,17 +705,17 @@ function renderResources() {
     return `<tr class="phase-resource-row ${status} ${rowUnsecured ? "unsecured" : ""}" data-edit-project="${esc(item.project.id)}"><td><strong>${esc(item.project.object)}</strong><small>${esc(phaseInfo(item.demand.phaseKey).label)}</small></td><td>${item.startMonth ? `${monthLabel(item.startMonth)} bis ${monthLabel(item.endMonth)}` : "noch offen"}</td><td><strong>${esc(item.name || "offen")}</strong></td><td>${item.pt == null ? "offen" : `${item.pt} PT`}</td><td><span class="resource-status ${status} ${rowUnsecured ? "unsecured" : ""}">${esc(statusLabel)}</span><small>${esc(detail)}</small></td></tr>`;
   }).join("")}</tbody></table>` : '<div class="empty-note">Noch kein Restbedarf erfasst. Im Projekt wird je Ressource und Phase genau ein Wert eingetragen.</div>';
 }
-function allPhaseCosts() {
-  return projects().flatMap(project => project.phaseCosts.map(item => ({ ...item, projectId: project.id, object: project.object })));
+function allFinanceEntries() {
+  return projects().flatMap(project => project.finances.map(item => ({ ...item, projectId: project.id, object: project.object })));
 }
 function costForYears(years, statuses = null) {
-  return allPhaseCosts().filter(item => years.includes(Number(item.year)) && (!statuses || statuses.includes(item.status))).reduce((sum, item) => sum + num(item.amount), 0);
+  return allFinanceEntries().filter(item => years.includes(Number(item.year)) && (!statuses || statuses.includes(item.status))).reduce((sum, item) => sum + num(item.amount), 0);
 }
 function renderFinance() {
   const horizons = [
-    { label: "0 bis 1 Jahr", years: [2026, 2027] },
-    { label: "2 bis 3 Jahre", years: [2028, 2029] },
-    { label: "4 bis 10 Jahre", years: [2030, 2031, 2032, 2033, 2034, 2035, 2036] }
+    { label: "0 bis 1 Jahr", years: [CURRENT_YEAR, CURRENT_YEAR + 1] },
+    { label: "2 bis 3 Jahre", years: [CURRENT_YEAR + 2, CURRENT_YEAR + 3] },
+    { label: "4 bis 10 Jahre", years: Array.from({ length: 7 }, (_, index) => CURRENT_YEAR + 4 + index) }
   ];
   $("#finance-horizons").innerHTML = horizons.map(horizon => {
     const secured = costForYears(horizon.years, ["approved", "bound"]);
@@ -691,7 +762,7 @@ function setRoleSelect(selector, value, emptyLabel) {
   $(selector).innerHTML = roleOptions(isEmpty ? "" : normalized, emptyLabel);
 }
 function renderPhasePlanEditor() {
-  $("#phase-plan-editor").innerHTML = editPhasePlan.map((row, index) => `<div class="phase-plan-row ${phaseInfo(row.phaseKey).className}" data-phase-plan="${index}"><div><i></i><strong>${phaseInfo(row.phaseKey).label}</strong><span>${index === 1 ? "Danach Entscheid Gesamtvorstand" : index === 3 ? "Danach Projektfreigabe Gesamtvorstand" : "Entscheid im Kompetenzrahmen"}</span></div><label><span>Status</span><select class="pp-status">${phaseStatusOptions(row.status)}</select></label><label><span>Verantwortung</span><select class="pp-assignee">${roleOptions(row.assignee)}</select></label><label><span>Start</span><select class="pp-start">${quarterOptions(row.startQuarter)}</select></label><label><span>Ende</span><select class="pp-end">${quarterOptions(row.endQuarter)}</select></label></div>`).join("");
+  $("#phase-plan-editor").innerHTML = editPhasePlan.map((row, index) => `<div class="phase-plan-row ${phaseInfo(row.phaseKey).className}" data-phase-plan="${index}"><div><i></i><strong>${phaseInfo(row.phaseKey).label}</strong><span>${index === 1 ? "Danach Entscheid Gesamtvorstand" : index === 3 ? "Danach Projektfreigabe Gesamtvorstand" : "Entscheid im Kompetenzrahmen"}</span></div><label><span>Status</span><select class="pp-status">${phaseStatusOptions(row.status)}</select></label><label><span>Verantwortung</span><select class="pp-assignee">${roleOptions(row.assignee)}</select></label><label><span>Ressourcenklärung</span><select class="pp-resource"><option value="open" ${row.resourceClarification !== "none" ? "selected" : ""}>noch offen</option><option value="none" ${row.resourceClarification === "none" ? "selected" : ""}>kein zusätzlicher Bedarf</option></select></label><label><span>Start</span><select class="pp-start">${quarterOptions(row.startQuarter)}</select></label><label><span>Ende</span><select class="pp-end">${quarterOptions(row.endQuarter)}</select></label></div>`).join("");
   renderCurrentAssigneeSummary();
 }
 function renderCurrentAssigneeSummary() {
@@ -713,8 +784,8 @@ function renderDemandEditor() {
     </div>`;
   }).join("") : '<div class="empty-note">Noch kein Ressourcenbedarf eingetragen.</div>';
 }
-function renderPhaseCostEditor() {
-  $("#phase-cost-editor").innerHTML = editPhaseCosts.length ? editPhaseCosts.map((item, index) => `<div class="edit-row cost" data-phase-cost="${index}"><label><span>Projektphase</span><select class="pc-phase">${phaseOptions(item.phaseKey)}</select></label><label><span>Jahr</span><select class="pc-year">${YEARS.map(year => `<option ${Number(item.year) === year ? "selected" : ""}>${year}</option>`).join("")}</select></label><label><span>Betrag CHF</span><input class="pc-amount" inputmode="decimal" value="${esc(item.amount)}"></label><label><span>Qualität</span><select class="pc-status">${COST_STATUSES.map(status => `<option value="${status.key}" ${item.status === status.key ? "selected" : ""}>${status.label}</option>`).join("")}</select></label><label><span>Quelle</span><input class="pc-source" value="${esc(item.source || "")}" placeholder="z. B. Offerte"></label><label><span>Informationsdatum</span><input class="pc-date" type="date" value="${esc(item.informationDate || "")}"></label><button type="button" class="remove" data-remove-phase-cost="${index}">×</button></div>`).join("") : '<div class="empty-note">Noch keine Kosten einer Projektphase und einem Jahr zugeordnet.</div>';
+function renderFinanceEditor() {
+  $("#finance-editor").innerHTML = editFinances.length ? editFinances.map((item, index) => `<div class="edit-row cost" data-finance="${index}"><label><span>Jahr</span><select class="pc-year">${YEARS.map(year => `<option ${Number(item.year) === year ? "selected" : ""}>${year}</option>`).join("")}</select></label><label><span>Betrag CHF</span><input class="pc-amount" type="number" min="1" step="1000" value="${esc(item.amount)}"></label><label><span>Qualität</span><select class="pc-status">${COST_STATUSES.map(status => `<option value="${status.key}" ${item.status === status.key ? "selected" : ""}>${status.label}</option>`).join("")}</select></label><label><span>Quelle</span><input class="pc-source" value="${esc(item.source || "")}" placeholder="z. B. BGR Schätzung, Budget, Offerte"></label><label><span>Informationsdatum</span><input class="pc-date" type="date" value="${esc(item.informationDate || "")}"></label><button type="button" class="remove" data-remove-finance="${index}">×</button></div>`).join("") : '<div class="empty-note">Noch keine Finanzen erfasst. Das ist zulässig und blockiert keine Freigabe.</div>';
 }
 function renderGateEditor() {
   $("#gate-editor").innerHTML = editGateHistory.length ? editGateHistory.map((gate, index) => {
@@ -727,6 +798,7 @@ function syncEditors() {
     ...editPhasePlan[index],
     status: row.querySelector(".pp-status").value,
     assignee: row.querySelector(".pp-assignee").value,
+    resourceClarification: row.querySelector(".pp-resource").value,
     startQuarter: row.querySelector(".pp-start").value,
     endQuarter: row.querySelector(".pp-end").value
   }));
@@ -737,9 +809,8 @@ function syncEditors() {
     phaseKey: row.querySelector(".d-phase").value,
     remainingPt: row.querySelector(".d-remaining").value
   }));
-  editPhaseCosts = $$("[data-phase-cost]").map((row, index) => ({
-    id: editPhaseCosts[index]?.id || uuid("pc"),
-    phaseKey: row.querySelector(".pc-phase").value,
+  editFinances = $("[data-finance]").map((row, index) => ({
+    id: editFinances[index]?.id || uuid("finance"),
     year: Number(row.querySelector(".pc-year").value),
     amount: row.querySelector(".pc-amount").value,
     status: row.querySelector(".pc-status").value,
@@ -768,8 +839,8 @@ function validateProjectEditors() {
   }
   const demandKeys = editDemands.map(demand => `${resourceKey(demand.name)}:${demand.phaseKey}`).filter(key => !key.startsWith(":"));
   if (new Set(demandKeys).size !== demandKeys.length) errors.push("Dieselbe Ressource darf je Projektphase nur einmal erfasst werden");
-  for (const cost of editPhaseCosts) {
-    if (cost.amount === "") errors.push("Kostenzeile: Betrag fehlt");
+  for (const finance of editFinances) {
+    errors.push(...validateFinanceEntry(finance).map(error => `Finanzen ${finance.year || ""}: ${error}`));
   }
   for (const gate of editGateHistory.filter(item => !item.persisted)) {
     if (!gate.date || !gate.reason) errors.push("Phasentor: Datum und Kurzbegründung sind Pflicht");
@@ -787,6 +858,7 @@ function openProject(id, newProject = false) {
     motherPhaseKey: "anlass",
     currentPhaseKey: "anlass",
     currentAssignee: "",
+    motherQuarter: START_QUARTER,
     roles: { gs: "offen", bk: "offen", vs: "nach Bedarf", bhb: "offen", control: "offen", deputy: "offen" },
     cashflow: [],
     cost: "",
@@ -810,15 +882,15 @@ function openProject(id, newProject = false) {
   setRoleSelect("#f-deputy", project.roles.deputy, "offen");
   editPhasePlan = clone(project.phasePlan);
   editDemands = clone(project.demands);
-  editPhaseCosts = clone(project.phaseCosts);
+  editFinances = clone(project.finances || []);
   editGateHistory = clone(project.gateHistory).map(gate => ({ ...gate, persisted: true }));
   $("#mother-cost-note").innerHTML = rawMotherCost(project)
-    ? `<strong>Referenz ImmoTool / Excel: ${chf(rawMotherCost(project))}</strong><span>Dieser Referenzwert wird nie automatisch mit den Phasenkosten summiert.</span>`
-    : "<strong>Kein Referenzwert</strong><span>Phasenkosten werden mit Quelle, Informationsdatum und Qualität erfasst.</span>";
+    ? `<strong>Referenz ImmoTool / Excel: ${chf(rawMotherCost(project))}</strong><span>Dieser Referenzwert wird nie automatisch mit der Finanzplanung im BauRadar summiert.</span>`
+    : "<strong>Kein Referenzwert</strong><span>Finanzen können projektweit pro Jahr erfasst werden. Fehlende Finanzen blockieren keine Freigabe.</span>";
   renderPhasePlanEditor();
   renderCurrentAssigneeSummary();
   renderDemandEditor();
-  renderPhaseCostEditor();
+  renderFinanceEditor();
   renderGateEditor();
   $("#delete-project").classList.toggle("hidden", newProject);
   setFormTab("base");
@@ -881,6 +953,18 @@ $("#workspace-select").addEventListener("change", event => {
   selectedId = activeWorkspace().projects[0]?.id;
   save();
 });
+$("#delete-scenario").addEventListener("click", () => {
+  if (state.mode !== "scenario") return;
+  const scenario = activeWorkspace();
+  if (!confirm(`Szenario «${scenario.name}» löschen? Der scharfe Stand bleibt unverändert.`)) return;
+  snapshot("Szenario gelöscht");
+  state.scenarios = state.scenarios.filter(item => item.id !== scenario.id);
+  state.mode = "sharp";
+  state.activeScenarioId = null;
+  selectedId = state.projects[0]?.id;
+  save("Szenario gelöscht");
+  toast("Szenario gelöscht");
+});
 $("#new-scenario").addEventListener("click", () => {
   if (state.mode !== "sharp") {
     toast("Ein neues Szenario wird immer aus dem scharfen Stand erstellt");
@@ -940,7 +1024,15 @@ $("#project-detail").addEventListener("click", event => {
 $("#edit-selected").addEventListener("click", () => openProject(selectedId));
 $("#new-project").addEventListener("click", () => openProject(null, true));
 $("#f-kind").addEventListener("change", renderProjectTypeGuidance);
-$("#f-phase").addEventListener("change", renderCurrentAssigneeSummary);
+$("#f-phase").addEventListener("change", () => {
+  syncEditors();
+  const selected = $("#f-phase").value;
+  editPhasePlan = editPhasePlan.map(row => ({
+    ...row,
+    status: row.phaseKey === selected ? "current" : (row.status === "current" ? "planned" : row.status)
+  }));
+  renderPhasePlanEditor();
+});
 $("#phase-plan-editor").addEventListener("change", event => {
   const select = event.target.closest(".pp-assignee");
   const row = select?.closest("[data-phase-plan]");
@@ -972,17 +1064,17 @@ $("#demand-editor").addEventListener("change", () => {
   syncEditors();
   renderDemandEditor();
 });
-$("#add-phase-cost").addEventListener("click", () => {
+$("#add-finance").addEventListener("click", () => {
   syncEditors();
-  editPhaseCosts.push({ id: uuid("pc"), phaseKey: $("#f-phase").value, year: 2027, amount: "", status: "estimate", source: "", informationDate: "" });
-  renderPhaseCostEditor();
+  editFinances.push({ id: uuid("finance"), year: CURRENT_YEAR, amount: "", status: "estimate", source: "", informationDate: "" });
+  renderFinanceEditor();
 });
-$("#phase-cost-editor").addEventListener("click", event => {
-  const button = event.target.closest("[data-remove-phase-cost]");
+$("#finance-editor").addEventListener("click", event => {
+  const button = event.target.closest("[data-remove-finance]");
   if (button) {
     syncEditors();
-    editPhaseCosts.splice(Number(button.dataset.removePhaseCost), 1);
-    renderPhaseCostEditor();
+    editFinances.splice(Number(button.dataset.removePhaseCost), 1);
+    renderFinanceEditor();
   }
 });
 $("#add-gate").addEventListener("click", () => {
@@ -1004,7 +1096,8 @@ $("#project-form").addEventListener("submit", event => {
   syncEditors();
   const id = $("#project-id").value;
   const existing = projects().find(item => item.id === id);
-  const phaseErrors = phasePlanIssues({ phasePlan: editPhasePlan });
+  const currentPhaseKey = $("#f-phase").value;
+  const phaseErrors = phasePlanIssues({ phasePlan: editPhasePlan, currentPhaseKey });
   const editorErrors = validateProjectEditors();
   if (phaseErrors.length || editorErrors.length) {
     const message = phaseErrors[0] || editorErrors[0];
@@ -1012,7 +1105,6 @@ $("#project-form").addEventListener("submit", event => {
     setFormTab(phaseErrors.length ? "phases" : "resources");
     return;
   }
-  const currentPhaseKey = $("#f-phase").value;
   const currentAssignee = editPhasePlan.find(row => row.phaseKey === currentPhaseKey)?.assignee || "";
   if (!currentAssignee) {
     toast(`Verantwortung ${phaseInfo(currentPhaseKey).short} fehlt`);
@@ -1040,7 +1132,7 @@ $("#project-form").addEventListener("submit", event => {
     },
     phasePlan: editPhasePlan,
     demands: editDemands,
-    phaseCosts: editPhaseCosts,
+    finances: editFinances,
     gateHistory: [...oldGates, ...newGates],
     category: $("#f-kind").value
   });
@@ -1195,13 +1287,20 @@ $("#export-capacity").addEventListener("click", () => csv("BGR_BauRadar_Verbindl
   ["Arbeitsstand", "Name", "Monat", "Verfügbare PT", "Bestätigt", "Bestätigt am"],
   ...capacities().map(item => [state.mode === "scenario" ? activeWorkspace().name : "Scharfer Stand", item.name, item.month, item.pt ?? "", item.confirmed ? "ja" : "nein", item.confirmedAt || ""])
 ]));
-$("#export-money").addEventListener("click", () => csv("BGR_BauRadar_Finanzen_nach_Projektphase.csv", [
-  ["Arbeitsstand", "Projekt ID", "Objekt", "Projektphase", "Jahr", "Betrag CHF", "Qualität", "Quelle", "Informationsdatum"],
-  ...projects().flatMap(project => project.phaseCosts.map(item => [state.mode === "scenario" ? activeWorkspace().name : "Scharfer Stand", project.id, project.object, phaseInfo(item.phaseKey).label, item.year, item.amount, COST_STATUSES.find(status => status.key === item.status)?.label || item.status, item.source || "", item.informationDate || ""]))
+$("#export-money").addEventListener("click", () => csv("BGR_BauRadar_Finanzen_nach_Jahr.csv", [
+  ["Arbeitsstand", "Projekt ID", "Objekt", "Jahr", "Betrag CHF", "Qualität", "Quelle", "Informationsdatum"],
+  ...projects().flatMap(project => project.finances.map(item => [state.mode === "scenario" ? activeWorkspace().name : "Scharfer Stand", project.id, project.object, item.year, item.amount, COST_STATUSES.find(status => status.key === item.status)?.label || item.status, item.source || "", item.informationDate || ""]))
 ]));
-$("#export-changes").addEventListener("click", () => csv("BGR_BauRadar_Aenderungsprotokoll.csv", [
+$("#export-changes").addEventListener("click", () => csv("BGR_BauRadar_Arbeitsprotokoll.csv", [
   ["Zeitpunkt", "Arbeitsstand", "Aktion", "Detail"],
   ...activeWorkspace().auditLog.map(item => [item.at, state.mode === "scenario" ? activeWorkspace().name : "Scharfer Stand", item.action, item.detail])
 ]));
+
+$$('.dialog [value="cancel"]').forEach(button => button.addEventListener("click", () => button.closest("dialog")?.close()));
+window.addEventListener("storage", event => {
+  if (event.key !== STORE_KEY || !event.newValue) return;
+  alert("Der BauRadar wurde in einem anderen Tab geändert. Dieser Tab wird neu geladen, damit keine Daten überschrieben werden.");
+  location.reload();
+});
 
 renderAll();
