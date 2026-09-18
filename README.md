@@ -10,10 +10,10 @@ Das BauRadar beantwortet die Umsetzungsfrage:
 - Wer trägt die Verantwortung?
 - Welche Menschen und Partner werden wann tatsächlich benötigt?
 - Reicht die bestätigte Verfügbarkeit?
-- Welche Phasenkosten sind geschätzt, budgetiert, freigegeben oder gebunden?
+- Welche projektweiten Finanzwerte stehen in welchem Jahr an und welche Qualität haben sie?
 - Was ist ein verbindlicher Stand und was ist nur ein Szenario?
 
-Die langfristige Objekt-, Investitions-, Finanzierungs- und Cashflowplanung bleibt im LUKB ImmoTool. Werte daraus können als Referenz sichtbar sein, werden aber nie automatisch mit den Phasenkosten addiert.
+Die langfristige Objekt-, Investitions-, Finanzierungs- und Cashflowplanung bleibt im LUKB ImmoTool. Werte daraus können als Referenz sichtbar sein, werden aber nie automatisch mit den Finanzwerte addiert.
 
 ## Verbindliche Fachlogik
 
@@ -37,6 +37,12 @@ Die langfristige Objekt-, Investitions-, Finanzierungs- und Cashflowplanung blei
 - BK und BHB sind Rollen beziehungsweise Gremien und werden nicht mit Personentagen belastet.
 - Pro Ressource und Monat ist nur ein Verfügbarkeitseintrag erlaubt.
 
+### Finanzen
+
+Finanzen sind im BauRadar bewusst **kein Muss Feld** und blockieren keine Projekt oder Phasenfreigabe. Fehlen Finanzwerte, zeigt der BauRadar einen Hinweis.
+
+Wenn Finanzen erfasst werden, gelten sie für das Gesamtprojekt und werden pro Jahr geführt mit Betrag, Qualität, Quelle und Informationsdatum. Nur freigegebene und vertraglich gebundene Werte werden als finanziell gesichert ausgewiesen. Referenzwerte aus ImmoTool oder Excel werden weiterhin nicht automatisch addiert.
+
 ### Phasentore
 
 Die frühere Meilensteinliste ist entfernt. Entscheide werden direkt als Phasentore protokolliert mit:
@@ -51,6 +57,12 @@ Die frühere Meilensteinliste ist entfernt. Entscheide werden direkt als Phasent
 
 Gespeicherte Torentscheide werden in der Oberfläche nicht still überschrieben.
 
+### Mutterstand und Arbeitsstand
+
+Der importierte Mutterstand ist versioniert. Aktueller Datenstand des Piloten ist **14.08.2026**. Der Mutterstand und der rollende Arbeitsstand werden getrennt geführt. Ändert sich später die importierte Mutterliste, kann der BauRadar die Mutterdaten aktualisieren, ohne die erarbeitete Planung still zu überschreiben.
+
+Unsichere Ausgangsdaten bleiben sichtbar markiert.
+
 ### Arbeitsstände
 
 Der scharfe Stand ist jederzeit sichtbar. Ein Szenario wird als vollständige Kopie des scharfen Standes erstellt und verändert diesen nicht. Ein Szenario hält Name, Fragestellung und Ausgangsdatum fest.
@@ -59,7 +71,7 @@ Die kontrollierte Übernahme einzelner Szenarioänderungen in den scharfen Stand
 
 ## Lokale Speicherung und Sicherung
 
-Der Pilot speichert weiterhin im lokalen Browser. Er ist noch keine Mehrbenutzeranwendung.
+Der Pilot speichert weiterhin im lokalen Browser. Er ist noch keine Mehrbenutzeranwendung. Wird derselbe Stand in zwei Browser Tabs geöffnet und in einem Tab verändert, lädt der zweite Tab neu, bevor ein alter Stand die neueren Daten überschreiben kann.
 
 Nach jeder Arbeitssitzung sollte eine **Vollsicherung JSON** heruntergeladen werden. Nur diese Datei kann den gesamten Stand einschliesslich Szenarien, Ressourcen, Phasentoren und Änderungsprotokoll verlustfrei wiederherstellen.
 
@@ -76,7 +88,7 @@ npm run dev
 npm run build
 ```
 
-Die Tests prüfen überlappende Phasen, die engste kritische Periode, fehlende Phasenfenster, den Unterschied zwischen leer und null, Jahresgrenzen, sichere Migration und den Schutz des CSV-Exports vor Excel-Formeln.
+Die Tests prüfen überlappende Phasen, die engste kritische Periode, fehlende Phasenfenster, den Unterschied zwischen leer und null, Jahresgrenzen, sichere Migration, Finanzvalidierung und den Schutz des CSV Exports vor Excel Formeln.
 
 ## Datenschutz
 
