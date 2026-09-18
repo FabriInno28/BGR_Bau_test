@@ -14,7 +14,7 @@
   <header class="topbar">
     <a class="brand" href="#top" aria-label="BGR BauRadar"><img src="bgr-logo.png" alt="BGR"><span>BauRadar</span></a>
     <nav aria-label="Schnellnavigation"><a href="#portfolio">Portfolio</a><a href="#ressourcen">Ressourcen</a><a href="#finanzen">Finanzen</a><a href="#export">Übergabe</a></nav>
-    <div class="top-actions"><span class="master-pill" id="mode-pill"><i></i>Scharfer Stand</span><select id="workspace-select" aria-label="Arbeitsstand wählen"><option value="sharp">Scharfer Stand</option></select><button class="button ghost" id="new-scenario">+ Szenario</button><button class="button ghost" id="undo" disabled>↶ Rückgängig</button><button class="button primary" id="new-project">+ Projekt</button></div>
+    <div class="top-actions"><span class="master-pill" id="mode-pill"><i></i>Scharfer Stand</span><select id="workspace-select" aria-label="Arbeitsstand wählen"><option value="sharp">Scharfer Stand</option></select><button class="button ghost" id="new-scenario">+ Szenario</button><button class="button ghost hidden" id="delete-scenario">Szenario löschen</button><button class="button ghost" id="undo" disabled>↶ Rückgängig</button><button class="button primary" id="new-project">+ Projekt</button></div>
   </header>
 
   <main id="top">
@@ -23,10 +23,10 @@
       <div class="hero-rule"><span>Verbindliche Planungslogik</span><strong>Kein Phasenstart ohne geklärte Verantwortung, personelle Kapazität, Finanzen und Termin.</strong><small>Verfügbarkeit wird monatlich erfasst. Bedarf und Entscheide bleiben phasenbezogen. Es gibt keine automatische Verteilung.</small></div>
     </section>
 
-    <section class="shell pulse" aria-label="Portfolio Kennzahlen"><div class="pulse-title"><span>Portfolio heute</span><small id="data-state">aktueller Stand Mutterliste</small></div><div class="kpis" id="kpis"></div></section>
+    <section class="shell pulse" aria-label="Portfolio Kennzahlen"><div class="pulse-title"><span>Portfolio und Planung</span><small id="data-state">aktueller Stand Mutterliste</small></div><div class="kpis" id="kpis"></div></section>
 
     <section class="shell section" id="portfolio">
-      <div class="section-head"><div><p class="eyebrow">Mutterstand und rollender Plan</p><h2>Alle Projekte. Alle Phasen.</h2><p>Der farbige Punkt zeigt den heutigen Stand. Farbige Balken entstehen erst, wenn eine Phase im Projekt geplant wurde.</p></div><div class="head-actions"><button class="button ghost" id="expand-long">Jahre 4 bis 10 einblenden</button><button class="button primary" id="edit-selected">Ausgewähltes Projekt planen</button></div></div>
+      <div class="section-head"><div><p class="eyebrow">Mutterstand und rollender Plan</p><h2>Alle Projekte. Alle Phasen.</h2><p>Der farbige Punkt zeigt den importierten Mutterstand vom 14.08.2026. Farbige Balken zeigen den davon getrennten Arbeitsstand und die geplanten Phasen.</p></div><div class="head-actions"><button class="button ghost" id="expand-long">Jahre 4 bis 10 einblenden</button><button class="button primary" id="edit-selected">Ausgewähltes Projekt planen</button></div></div>
       <div class="toolbar">
         <label class="search"><span>⌕</span><input id="search" type="search" placeholder="Objekt oder Massnahme suchen"></label>
         <label><span>Projektart</span><select id="kind-filter"><option value="all">Alle</option><option>Kleinprojekt</option><option>Bauprojekt</option></select></label>
@@ -54,20 +54,20 @@
     </div></section>
 
     <section class="shell section finance-section" id="finanzen">
-      <div class="section-head compact"><div><p class="eyebrow">Finanzen nach Projektphasen</p><h2>Nur qualifizierte Kosten steuern.</h2><p>Ein Wert wird je Projektphase und Jahr erfasst. Schätzungen bleiben sichtbar. Freigegebene und gebundene Beträge werden separat ausgewiesen.</p></div></div>
+      <div class="section-head compact"><div><p class="eyebrow">Finanzen des Gesamtportfolios</p><h2>Projektweit nach Jahren planen.</h2><p>Finanzen sind kein Freigabe Muss. Wo Werte vorhanden sind, werden sie pro Projekt und Jahr mit Qualität, Quelle und Informationsdatum geführt. Fehlende Werte bleiben als Hinweis sichtbar.</p></div></div>
       <div class="finance-horizons" id="finance-horizons"></div>
       <div class="finance-grid"><article class="finance-chart-card"><div class="card-head"><div><strong>Jahressicht Portfolio</strong><span>Schätzung, budgetiert, freigegeben und vertraglich gebunden</span></div></div><div id="finance-chart" class="finance-chart"></div><div class="finance-legend" id="finance-legend"></div></article><article class="gate-card"><span class="gate-number">2</span><div><strong>Grosse Entscheide</strong><p>Nach der Machbarkeitsstudie und nach der Planung wird der Gesamtvorstand einbezogen.</p><small>Machbarkeit: Kostengenauigkeit ±25 Prozent. Projektfreigabe: ±10 Prozent.</small></div></article></div>
     </section>
 
-    <section class="export-band" id="export"><div class="shell export-grid"><div><p class="eyebrow">Sicherung und kontrollierte Übergabe</p><h2>Excel ist die lesbare Sicherung. JSON stellt den ganzen Stand wieder her.</h2><p>Der Pilot speichert weiterhin nur in diesem Browser. Deshalb nach jeder Arbeitssitzung eine vollständige Sicherung herunterladen.</p><input id="import-backup" type="file" accept="application/json,.json" hidden></div><div class="export-actions"><button class="button light" id="export-backup">Vollsicherung JSON</button><button class="button light" id="import-backup-button">Sicherung einlesen</button><button class="button light" id="export-projects">Projekte und Phasen</button><button class="button light" id="export-resources">Ressourcenbedarf</button><button class="button light" id="export-money">Finanzen nach Phase</button><button class="button light" id="export-changes">Änderungen</button><button class="button danger-light" id="reset-all">Planung zurücksetzen</button></div></div></section>
+    <section class="export-band" id="export"><div class="shell export-grid"><div><p class="eyebrow">Sicherung und kontrollierte Übergabe</p><h2>JSON stellt den ganzen Stand wieder her.</h2><p>Der Pilot speichert weiterhin nur in diesem Browser. CSV Dateien sind lesbare Exporte. Nach jeder Arbeitssitzung bitte eine vollständige JSON Sicherung herunterladen.</p><input id="import-backup" type="file" accept="application/json,.json" hidden></div><div class="export-actions"><button class="button light" id="export-backup">Vollsicherung JSON</button><button class="button light" id="import-backup-button">Sicherung einlesen</button><button class="button light" id="export-projects">Projekte und Phasen</button><button class="button light" id="export-resources">Ressourcenbedarf</button><button class="button light" id="export-money">Finanzen nach Jahr</button><button class="button light" id="export-changes">Arbeitsprotokoll</button><button class="button danger-light" id="reset-all">Planung zurücksetzen</button></div></div></section>
   </main>
 
   <dialog id="project-dialog" class="dialog wide"><form method="dialog" id="project-form">
-    <div class="dialog-head"><div><p class="eyebrow">Projekt planen</p><h2 id="project-dialog-title">Projekt</h2></div><button class="close" value="cancel" aria-label="Schliessen">×</button></div><input type="hidden" id="project-id">
+    <div class="dialog-head"><div><p class="eyebrow">Projekt planen</p><h2 id="project-dialog-title">Projekt</h2></div><button type="button" class="close" value="cancel" aria-label="Schliessen">×</button></div><input type="hidden" id="project-id">
     <div class="dialog-tabs"><button type="button" class="active" data-form-tab="base">Grunddaten</button><button type="button" data-form-tab="phases">Phasenplan</button><button type="button" data-form-tab="roles">Rollen</button><button type="button" data-form-tab="resources">Ressourcen</button><button type="button" data-form-tab="money">Finanzen</button><button type="button" data-form-tab="gates">Phasentore</button></div>
 
     <div class="form-panel" data-panel="base">
-      <div class="mother-box"><span>Aktueller Stand Mutterliste</span><strong id="mother-state">offen</strong><small>Dieser Wert beschreibt den heutigen Stand. Die zukünftigen Phasen werden separat geplant.</small></div>
+      <div class="mother-box"><span>Mutterstand vom 14.08.2026</span><strong id="mother-state">offen</strong><small>Dieser importierte Stand bleibt vom Arbeitsstand getrennt. Neue Planungen verändern den Mutterstand nicht.</small></div>
       <div class="form-grid two"><label><span>Objekt</span><input id="f-object" required></label><label><span>Projektart</span><select id="f-kind"><option>Kleinprojekt</option><option>Bauprojekt</option></select></label></div>
       <label><span>Massnahme</span><textarea id="f-measure" required></textarea></label>
       <div class="project-type-guidance" id="project-type-guidance">
@@ -78,27 +78,27 @@
       <label><span>Nächster Entscheid oder Klärungspunkt</span><textarea id="f-next"></textarea></label>
     </div>
 
-    <div class="form-panel hidden" data-panel="phases"><p class="panel-intro">Für jede Phase werden Zeitraum, Status und Verantwortung separat festgelegt. Erst ein Start und ein Ende machen aus einer offenen Phase eine zeitliche Planung. Die Reihenfolge wird geprüft.</p><div class="phase-plan-editor" id="phase-plan-editor"></div></div>
+    <div class="form-panel hidden" data-panel="phases"><p class="panel-intro">Für jede Phase werden Zeitraum, Status und Verantwortung separat festgelegt. Zusätzlich wird geklärt, ob Ressourcenbedarf erfasst wird oder bewusst kein zusätzlicher Bedarf besteht. Erst ein Start und ein Ende machen aus einer offenen Phase eine zeitliche Planung.</p><div class="phase-plan-editor" id="phase-plan-editor"></div></div>
 
     <div class="form-panel hidden" data-panel="roles"><p class="panel-intro">Diese Rollen gelten für das ganze Projekt. Die operative Verantwortung wird dagegen für jede Phase im Phasenplan festgelegt. Die Bauherrenbegleitung wird separat mandatiert und ist spätestens ab Machbarkeitsstudie dabei.</p><div class="form-grid two"><label><span>Mitglied Geschäftsstelle</span><select id="f-gs"></select></label><label><span>Mitglied Baukommission</span><select id="f-bk"></select></label><label><span>Mitglied Vorstand, Gesamtsicht</span><select id="f-vs"></select></label><label><span>Bauherrenbegleitung</span><select id="f-bhb"></select></label><label><span>Unabhängige Kontrolle</span><select id="f-control"></select></label><label><span>Projektweite Stellvertretung</span><select id="f-deputy"></select></label></div></div>
 
     <div class="form-panel hidden" data-panel="resources"><div class="repeat-head"><div><strong>Restbedarf dieses Projekts</strong><span>Je Person oder Firma und Projektphase wird genau ein Wert erfasst.</span></div><button type="button" class="button ghost" id="add-demand">+ Ressourcenbedarf</button></div><div class="edit-table" id="demand-editor"></div><p class="input-note">Bei zukünftigen Phasen entspricht der Wert dem gesamten erwarteten Bedarf. Bei laufenden Phasen wird nur eingetragen, was ab heute noch benötigt wird. Das BauRadar verteilt nichts auf einzelne Monate.</p></div>
 
-    <div class="form-panel hidden" data-panel="money"><div class="mother-cost-note" id="mother-cost-note"></div><div class="repeat-head"><div><strong>Kosten nach Phase und Jahr</strong><span>Jeder Betrag erhält eine Qualität. Nur freigegebene und gebundene Werte gelten als gesichert.</span></div><button type="button" class="button ghost" id="add-phase-cost">+ Phasenkosten</button></div><div class="edit-table" id="phase-cost-editor"></div></div>
+    <div class="form-panel hidden" data-panel="money"><div class="mother-cost-note" id="mother-cost-note"></div><p class="input-note"><strong>Finanzen sind kein Muss Feld.</strong> Ein Projekt oder eine Phase kann auch ohne erfasste Finanzen freigegeben werden. Der BauRadar zeigt dann einen Hinweis. Wenn Finanzen erfasst werden, erfolgt dies projektweit pro Jahr.</p><div class="repeat-head"><div><strong>Finanzen des Gesamtprojekts nach Jahr</strong><span>Jeder Betrag erhält Qualität, Quelle und Informationsdatum. Nur freigegebene und gebundene Werte gelten als gesichert.</span></div><button type="button" class="button ghost" id="add-finance">+ Finanzwert</button></div><div class="edit-table" id="finance-editor"></div></div>
 
     <div class="form-panel hidden" data-panel="gates"><div class="repeat-head"><div><strong>Historie der Phasentore</strong><span>Entscheide werden protokolliert und nicht still überschrieben.</span></div><button type="button" class="button ghost" id="add-gate">+ Entscheid erfassen</button></div><div class="edit-table" id="gate-editor"></div></div>
 
-    <div class="dialog-actions"><button type="button" class="text-danger" id="delete-project">Projekt löschen</button><span></span><button class="button ghost" value="cancel">Abbrechen</button><button type="submit" class="button primary" value="default">Planung speichern</button></div>
+    <div class="dialog-actions"><button type="button" class="text-danger" id="delete-project">Projekt löschen</button><span></span><button type="button" class="button ghost" value="cancel">Abbrechen</button><button type="submit" class="button primary" value="default">Planung speichern</button></div>
   </form></dialog>
 
   <dialog id="capacity-dialog" class="dialog wide"><form method="dialog" id="capacity-form">
-    <div class="dialog-head"><div><p class="eyebrow">Verbindliche Verfügbarkeit</p><h2>Jahr gemeinsam erfassen</h2></div><button class="close" value="cancel" aria-label="Schliessen">×</button></div>
+    <div class="dialog-head"><div><p class="eyebrow">Verbindliche Verfügbarkeit</p><h2>Jahr gemeinsam erfassen</h2></div><button type="button" class="close" value="cancel" aria-label="Schliessen">×</button></div>
     <div class="form-grid two capacity-head-fields"><label><span>Person oder Firma</span><select id="c-name" required></select></label><label><span>Jahr</span><select id="c-year"></select></label></div>
     <div class="capacity-year-intro"><div><strong>Alle zwölf Monate auf einen Blick</strong><span>Nur bekannte Werte eintragen. Leere Monate bleiben offen. Bereits gespeicherte Werte sind vorausgefüllt.</span></div><div class="capacity-year-total"><strong id="c-year-total">0 PT erfasst</strong><span id="c-year-open">12 Monate noch offen</span></div></div>
     <div class="capacity-year-grid" id="capacity-year-grid"></div>
     <label class="confirm-field"><input id="c-confirmed" type="checkbox" required><span>Die eingetragenen Monatswerte wurden mit der Person oder Firma geklärt und können verbindlich verwendet werden. Eine eingetragene Null bedeutet bestätigt nicht verfügbar.</span></label>
     <p class="input-note">Es wird nichts automatisch verteilt oder aus anderen Monaten hochgerechnet. Wenn du einen bestehenden Monatswert vollständig leerst, wird er beim Speichern entfernt.</p>
-    <div class="dialog-actions"><button type="button" class="text-danger hidden" id="delete-capacity">Ganzes Jahr löschen</button><span></span><button class="button ghost" value="cancel">Abbrechen</button><button type="submit" class="button primary">Jahr speichern</button></div>
+    <div class="dialog-actions"><button type="button" class="text-danger hidden" id="delete-capacity">Ganzes Jahr löschen</button><span></span><button type="button" class="button ghost" value="cancel">Abbrechen</button><button type="submit" class="button primary">Jahr speichern</button></div>
   </form></dialog>
 
   <div class="toast" id="toast" role="status"></div><script type="module" src="app.js"></script>
