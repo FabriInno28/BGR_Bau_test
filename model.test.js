@@ -8,7 +8,9 @@ import {
   migrateState,
   nullableNumberValue,
   phaseMonthWindow,
-  validateDemand
+  validateDemand,
+  validateFinanceEntry,
+  ROLE_OPTIONS
 } from "./model.js";
 
 function capacities(values) {
@@ -194,4 +196,24 @@ test("Schemamigration leitet die aktuelle Verantwortung aus dem Phasenplan ab", 
   assert.equal(migrated.schemaVersion, SCHEMA_VERSION);
   assert.equal(migrated.projects[0].phasePlan[1].assignee, "Iris");
   assert.equal(migrated.projects[0].currentAssignee, "Iris");
+});
+
+test("Geschäftsstelle ist als Verantwortung erlaubt, aber keine Kapazitätsressource", () => {
+  assert.equal(ROLE_OPTIONS.includes("Geschäftsstelle"), true);
+  assert.match(validateDemand({ name: "Geschäftsstelle", remainingPt: 4 })[0], /Rolle/);
+});
+
+test("alte Phasenkosten werden als projektweite Finanzwerte migriert", () => {
+  const migrated = migrateState({
+    projects: [{ id: "p1", phasePlan: [], phaseCosts: [{ id: "f1", phaseKey: "planung", year: 2027, amount: "100000", status: "estimate", source: "BGR", informationDate: "2026-09-18" }] }]
+  });
+  assert.equal(migrated.projects[0].finances.length, 1);
+  assert.equal(migrated.projects[0].finances[0].legacyPhaseKey, "planung");
+  assert.equal(migrated.projects[0].finances[0].year, 2027);
+});
+
+test("Finanzen sind optional, erfasste Finanzwerte müssen aber vollständig sein", () => {
+  assert.deepEqual(validateFinanceEntry({ year: 2027, amount: "100000", source: "Budget", informationDate: "2026-09-18" }), []);
+  assert.match(validateFinanceEntry({ year: 2027, amount: "", source: "", informationDate: "" })[0], /Betrag/);
+  assert.match(validateFinanceEntry({ year: 2027, amount: "-1", source: "Budget", informationDate: "2026-09-18" })[0], /grösser/);
 });
