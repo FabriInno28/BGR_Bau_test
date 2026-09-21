@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#184f4a">
-  <title>BGR BauRadar</title>
+  <title>BGR BauRadar | Geschützter Datentest über GitHub Pages</title>
   <meta name="description" content="Rollende Projekt-, Ressourcen- und Finanzplanung der Baugenossenschaft Reussbühl">
   <link rel="icon" href="bgr-mark.png">
   <link rel="stylesheet" href="style.css">
@@ -18,15 +18,16 @@
   </header>
 
   <main id="top">
+<section class="shell" id="pilot-start" aria-label="Testdaten laden" style="margin-top:24px;margin-bottom:24px;padding:24px 28px;border:1px solid #9bb7aa;border-radius:18px;background:#f0f6f0;box-shadow:0 8px 30px rgba(23,58,55,.05)"><p class="eyebrow" style="margin:0 0 8px">BGR BauRadar · interner Pilot · GitHub Pages</p><h2 style="margin:0 0 10px;font-size:clamp(1.35rem,2.5vw,1.9rem);line-height:1.2">Zuerst den BGR-Startstand laden</h2><p style="margin:0 0 12px;max-width:790px;line-height:1.55">Diese öffentliche Testseite enthält bewusst <strong>keine BGR-Projekt- oder Finanzdaten</strong>. Die separate, intern zugestellte JSON-Startdatei laden Sie einmal über <strong>«Vollsicherung einlesen»</strong>. Danach können Sie hier mit dem vertrauten BauRadar arbeiten. Die Änderungen bleiben in diesem Browser und werden nicht zwischen Personen synchronisiert.</p><p style="margin:0"><a class="button primary" href="#export" style="display:inline-flex;align-items:center;text-decoration:none">Zur JSON-Einlesung ↓</a> <span style="display:inline-block;margin-left:8px;font-size:13px;color:#42655c">Kein Vercel-Zugang · kein ablaufender Freigabelink · Stand regelmässig sichern</span></p></section>
     <section class="hero shell">
-      <div class="hero-copy"><p class="eyebrow">BGR BauRadar · rollende Bauplanung</p><h1>Heute sauber abbilden.<br><em>Morgen verlässlich planen.</em></h1><p>Die Mutterliste zeigt den aktuellen Projektstand. Im BauRadar planen wir für jedes Projekt alle Phasen, die benötigten Menschen, die finanziellen Mittel und die entscheidenden Übergänge.</p></div>
+      <div class="hero-copy"><p class="eyebrow">BGR BauRadar · rollende Bauplanung</p><h1>Heute sauber abbilden.<br><em>Morgen verlässlich planen.</em></h1><p>Nach dem Einlesen des BGR-Startstands zeigt die Mutterliste den aktuellen Projektstand. Im BauRadar planen wir für jedes Projekt alle Phasen, die benötigten Menschen, die finanziellen Mittel und die entscheidenden Übergänge.</p></div>
       <div class="hero-rule"><span>Verbindliche Planungslogik</span><strong>Kein Phasenstart ohne geklärte Verantwortung, personelle Kapazität und Termin.</strong><small>Offene Finanzen bleiben sichtbar, sind aber keine Voraussetzung für eine Freigabe. Verfügbarkeit wird monatlich erfasst. Es gibt keine automatische Verteilung.</small></div>
     </section>
 
     <section class="shell pulse" aria-label="Portfolio Kennzahlen"><div class="pulse-title"><span>Portfolio und Planung</span><small id="data-state">aktueller Stand Mutterliste</small></div><div class="kpis" id="kpis"></div></section>
 
     <section class="shell section" id="portfolio">
-      <div class="section-head"><div><p class="eyebrow">Mutterstand und rollender Plan</p><h2>Alle Projekte. Alle Phasen.</h2><p>Der farbige Punkt zeigt den importierten Mutterstand vom 14.08.2026. Farbige Balken zeigen den davon getrennten Arbeitsstand und die geplanten Phasen.</p></div><div class="head-actions"><button class="button ghost" id="expand-long">Jahre 4 bis 10 einblenden</button><button class="button primary" id="edit-selected">Ausgewähltes Projekt planen</button></div></div>
+      <div class="section-head"><div><p class="eyebrow">Mutterstand und rollender Plan</p><h2>Alle Projekte. Alle Phasen.</h2><p>Nach dem Einlesen zeigt der farbige Punkt den importierten Mutterstand vom 14.08.2026. Farbige Balken zeigen den davon getrennten Arbeitsstand und die geplanten Phasen.</p></div><div class="head-actions"><button class="button ghost" id="expand-long">Jahre 4 bis 10 einblenden</button><button class="button primary" id="edit-selected">Ausgewähltes Projekt planen</button></div></div>
       <div class="toolbar">
         <label class="search"><span>⌕</span><input id="search" type="search" placeholder="Objekt oder Massnahme suchen"></label>
         <label><span>Projektart</span><select id="kind-filter"><option value="all">Alle</option><option>Kleinprojekt</option><option>Bauprojekt</option></select></label>
