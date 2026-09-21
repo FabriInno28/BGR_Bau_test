@@ -1837,7 +1837,7 @@ const LEGACY_STORE_KEY = "bgr-portfolio-cockpit-v3";
 const HISTORY_KEY = "bgr-bauradar-v7-history";
 
 const $ = selector => document.querySelector(selector);
-const $ = selector => [...document.querySelectorAll(selector)];
+const $$ = selector => [...document.querySelectorAll(selector)];
 const esc = value => String(value ?? "").replace(/[&<>'"]/g, character => ({
   "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;"
 }[character]));
@@ -2569,7 +2569,7 @@ function renderGateEditor() {
   }).join("") : '<div class="empty-note">Noch kein Phasentorentscheid protokolliert.</div>';
 }
 function syncEditors() {
-  editPhasePlan = $("[data-phase-plan]").map((row, index) => ({
+  editPhasePlan = $$("[data-phase-plan]").map((row, index) => ({
     ...editPhasePlan[index],
     status: row.querySelector(".pp-status").value,
     assignee: row.querySelector(".pp-assignee").value,
@@ -2577,14 +2577,14 @@ function syncEditors() {
     startQuarter: row.querySelector(".pp-start").value,
     endQuarter: row.querySelector(".pp-end").value
   }));
-  editDemands = $("[data-demand]").map((row, index) => ({
+  editDemands = $$("[data-demand]").map((row, index) => ({
     ...editDemands[index],
     id: editDemands[index]?.id || uuid("d"),
     name: canonicalResourceName(row.querySelector(".d-name").value),
     phaseKey: row.querySelector(".d-phase").value,
     remainingPt: row.querySelector(".d-remaining").value
   }));
-  editFinances = $("[data-finance]").map((row, index) => ({
+  editFinances = $$("[data-finance]").map((row, index) => ({
     id: editFinances[index]?.id || uuid("finance"),
     year: Number(row.querySelector(".pc-year").value),
     amount: row.querySelector(".pc-amount").value,
@@ -2592,7 +2592,7 @@ function syncEditors() {
     source: row.querySelector(".pc-source").value.trim(),
     informationDate: row.querySelector(".pc-date").value
   }));
-  editGateHistory = $("[data-gate]").map((row, index) => {
+  editGateHistory = $$("[data-gate]").map((row, index) => {
     if (editGateHistory[index]?.persisted) return editGateHistory[index];
     return {
       ...editGateHistory[index],
@@ -2682,15 +2682,15 @@ function openProject(id, newProject = false) {
   $("#project-dialog").showModal();
 }
 function setFormTab(name) {
-  $("[data-form-tab]").forEach(button => button.classList.toggle("active", button.dataset.formTab === name));
-  $("[data-panel]").forEach(panel => panel.classList.toggle("hidden", panel.dataset.panel !== name));
+  $$("[data-form-tab]").forEach(button => button.classList.toggle("active", button.dataset.formTab === name));
+  $$("[data-panel]").forEach(panel => panel.classList.toggle("hidden", panel.dataset.panel !== name));
 }
 function renderProjectTypeGuidance() {
   const selected = $("#f-kind").value;
-  $('[data-project-type]').forEach(card => card.classList.toggle("active", card.dataset.projectType === selected));
+  $$('[data-project-type]').forEach(card => card.classList.toggle("active", card.dataset.projectType === selected));
 }
 function renderCapacityYearSummary() {
-  const values = $("[data-capacity-month] .cy-pt").map(input => input.value).filter(value => value !== "");
+  const values = $$("[data-capacity-month] .cy-pt").map(input => input.value).filter(value => value !== "");
   const total = values.reduce((sum, value) => sum + (nullableNumberValue(value) ?? 0), 0);
   $("#c-year-total").textContent = `${total} PT erfasst`;
   $("#c-year-open").textContent = values.length === 12 ? "Alle 12 Monate ausgefüllt" : `${12 - values.length} Monate noch offen`;
@@ -2826,7 +2826,7 @@ $("#phase-plan-editor").addEventListener("change", event => {
   renderCurrentAssigneeSummary();
 });
 $("#expand-long").addEventListener("click", () => { longOpen = !longOpen; renderLongHorizon(); });
-$("[data-form-tab]").forEach(button => button.addEventListener("click", () => {
+$$("[data-form-tab]").forEach(button => button.addEventListener("click", () => {
   syncEditors();
   if (button.dataset.formTab === "resources") renderDemandEditor();
   setFormTab(button.dataset.formTab);
@@ -2970,7 +2970,7 @@ $("#capacity-form").addEventListener("submit", event => {
   const name = canonicalResourceName($("#c-name").value);
   const year = $("#c-year").value;
   const existing = new Map(capacities().filter(item => resourceKey(item.name) === resourceKey(name) && item.month?.startsWith(`${year}-`)).map(item => [item.month, item]));
-  const rows = $('[data-capacity-month]').map(card => ({
+  const rows = $$('[data-capacity-month]').map(card => ({
     month: card.dataset.capacityMonth,
     pt: card.querySelector(".cy-pt").value
   }));
@@ -3090,7 +3090,7 @@ $("#export-changes").addEventListener("click", () => csv("BGR_BauRadar_Arbeitspr
   ...activeWorkspace().auditLog.map(item => [item.at, state.mode === "scenario" ? activeWorkspace().name : "Scharfer Stand", item.action, item.detail])
 ]));
 
-$('.dialog [value="cancel"]').forEach(button => button.addEventListener("click", () => button.closest("dialog")?.close()));
+$$('.dialog [value="cancel"]').forEach(button => button.addEventListener("click", () => button.closest("dialog")?.close()));
 window.addEventListener("storage", event => {
   if (event.key !== STORE_KEY || !event.newValue) return;
   alert("Der BauRadar wurde in einem anderen Tab geändert. Dieser Tab wird neu geladen, damit keine Daten überschrieben werden.");
