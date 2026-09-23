@@ -1,7 +1,12 @@
 import { BASELINE_META, BASELINE_PROJECTS } from "./projects-data.js";
 import {
   CAPACITY_RESOURCES,
+  DEMAND_RESOURCES,
+  OFFICE_PEOPLE,
+  OFFICE_UNASSIGNED,
   ROLE_OPTIONS,
+  allocateOfficeDemand,
+  isOfficeUnassigned,
   SCHEMA_VERSION,
   assessResourceCapacity,
   canonicalResourceName,
@@ -369,6 +374,7 @@ function projectIssues(project) {
   for (const demand of project.demands) {
     const item = allPhaseDemands().find(entry => entry.id === demand.id);
     if (item?.past) continue;
+    if (isOfficeUnassigned(demand.name)) issues.push(`${phaseInfo(demand.phaseKey).short}: ${demand.remainingPt || "offene"} PT der Geschäftsstelle noch nicht namentlich zugeteilt`);
     if (nullableNumberValue(demand.remainingPt) == null) issues.push(`${demand.name || "Ressource"}: Restbedarf noch nicht erfasst`);
     else if (!item?.startMonth || !item?.endMonth) issues.push(`${demand.name}: ${phaseInfo(demand.phaseKey).short} zeitlich noch nicht beurteilbar`);
     else {
@@ -397,14 +403,15 @@ function changedProject(project) {
 }
 
 function resourceGroups() {
+  // Unzugeteilter Gruppenbedarf gehört NICHT in die verfügbare Personen-Kapazität.
   const map = new Map();
   capacities().forEach(item => {
     const key = resourceKey(item.name);
-    if (key && !map.has(key)) map.set(key, { key, name: item.name });
+    if (key && !isOfficeUnassigned(item.name) && !map.has(key)) map.set(key, { key, name: item.name });
   });
   projects().flatMap(project => project.demands).forEach(item => {
     const key = resourceKey(item.name);
-    if (key && !map.has(key)) map.set(key, { key, name: item.name });
+    if (key && !isOfficeUnassigned(item.name) && !map.has(key)) map.set(key, { key, name: item.name });
   });
   return [...map.values()].sort((a, b) => a.name.localeCompare(b.name, "de"));
 }
@@ -484,6 +491,9 @@ function allResourceAssessments() {
 }
 function demandStatus(item) {
   if (item.past) return "ok";
+  // Die Geschäftsstelle als Gruppe hat nie eine eigene verfügbare Kapazität:
+  // Solange PT nicht namentlich zugeteilt sind, bleibt die Phase offen.
+  if (isOfficeUnassigned(item.name)) return "open";
   if (item.pt == null || item.pt <= 0 || !item.startMonth || !item.endMonth) return "open";
   const assessment = assessmentForResource(item.resourceKey);
   if (assessment.bottleneck?.utilization > 1 && assessment.bottleneck.involvedIds.includes(item.id)) return "gap";
@@ -636,6 +646,9 @@ function renderDetail() {
     </div>`;
 }
 function renderResources() {
+  const officeOpen = allPhaseDemands().filter(item => !item.past && isOfficeUnassigned(item.name));
+  const officePt = officeOpen.reduce((total, item) => total + (item.pt ?? 0), 0);
+  $("#office-open-work").innerHTML = `<div><span>Geschäftsstelle · noch nicht zugeteilt</span><strong>${officePt} PT offen</strong><small>${officeOpen.length} Projektphasen mit offenem Zuteilungsbedarf. Diese PT sind keine zusätzliche Kapazität.</small></div><div class="office-open-projects">${officeOpen.length ? officeOpen.map(item => `<button type="button" data-edit-project="${esc(item.project.id)}"><strong>${esc(item.project.object)}</strong><span>${esc(phaseInfo(item.demand.phaseKey).label)} · ${item.pt == null ? "PT offen" : `${item.pt} PT`}</span></button>`).join("") : '<span>Aktuell kein unzugeteilter Bedarf der Geschäftsstelle erfasst.</span>'}</div>`;
   const groups = resourceGroups();
   const select = $("#resource-focus");
   const previous = select.value;
@@ -692,11 +705,13 @@ function renderResources() {
   const phaseRows = allPhaseDemands().sort((a, b) => a.project.object.localeCompare(b.project.object, "de") || phaseIndex(a.demand.phaseKey) - phaseIndex(b.demand.phaseKey));
   $("#resource-matrix").innerHTML = phaseRows.length ? `<table class="resource-matrix phase-resource-table"><thead><tr><th>Projekt und Phase</th><th>Zeitraum</th><th>Ressource</th><th>Restbedarf</th><th>Beurteilung</th></tr></thead><tbody>${phaseRows.map(item => {
     const status = demandStatus(item);
-    const assessment = assessmentForResource(item.resourceKey);
-    const itemBottleneck = assessment.bottleneck?.involvedIds.includes(item.id) ? assessment.bottleneck : null;
-    const itemConfirmation = assessment.confirmation?.involvedIds.includes(item.id) ? assessment.confirmation : null;
+    const assessment = isOfficeUnassigned(item.name) ? null : assessmentForResource(item.resourceKey);
+    const itemBottleneck = assessment?.bottleneck?.involvedIds.includes(item.id) ? assessment.bottleneck : null;
+    const itemConfirmation = assessment?.confirmation?.involvedIds.includes(item.id) ? assessment.confirmation : null;
     const detail = item.past
       ? "Die Phase liegt vollständig in der Vergangenheit und wird nicht gegen künftige Kapazität gerechnet."
+      : isOfficeUnassigned(item.name)
+      ? "Aufwand der Geschäftsstelle ist noch nicht Roli, Mark oder Stefan zugeteilt. Zuteilung im Projekt reduziert den offenen Gruppentopf."
       : status === "gap" && itemBottleneck
       ? `${monthLabel(itemBottleneck.startMonth)} bis ${monthLabel(itemBottleneck.endMonth)}: ${itemBottleneck.demand} PT Bedarf, ${itemBottleneck.capacity} PT verfügbar, ${itemBottleneck.shortfall} PT fehlen.`
       : status === "watch" && itemBottleneck
@@ -707,7 +722,7 @@ function renderResources() {
           ? item.pt == null ? "Noch benötigte PT fehlen." : !item.startMonth ? "Die Phase hat noch kein vollständiges Zeitfenster." : "Für benötigte Monate fehlt die bestätigte Verfügbarkeit."
           : "Der Restbedarf ist innerhalb des Phasenfensters rechnerisch tragbar.";
     const rowUnsecured = status === "open" && itemConfirmation?.unconfirmedNeeded > 0;
-    const statusLabel = item.past ? "Vergangene Phase" : rowUnsecured ? "Kapazität nicht abgesichert" : RESOURCE_STATUS[status].label;
+    const statusLabel = item.past ? "Vergangene Phase" : isOfficeUnassigned(item.name) ? "Zuteilung offen" : rowUnsecured ? "Kapazität nicht abgesichert" : RESOURCE_STATUS[status].label;
     return `<tr class="phase-resource-row ${status} ${rowUnsecured ? "unsecured" : ""}" data-edit-project="${esc(item.project.id)}"><td><strong>${esc(item.project.object)}</strong><small>${esc(phaseInfo(item.demand.phaseKey).label)}</small></td><td>${item.startMonth ? `${monthLabel(item.startMonth)} bis ${monthLabel(item.endMonth)}` : "noch offen"}</td><td><strong>${esc(item.name || "offen")}</strong></td><td>${item.pt == null ? "offen" : `${item.pt} PT`}</td><td><span class="resource-status ${status} ${rowUnsecured ? "unsecured" : ""}">${esc(statusLabel)}</span><small>${esc(detail)}</small></td></tr>`;
   }).join("")}</tbody></table>` : '<div class="empty-note">Noch kein Restbedarf erfasst. Im Projekt wird je Ressource und Phase genau ein Wert eingetragen.</div>';
 }
@@ -766,6 +781,10 @@ function capacityResourceOptions(selected = "") {
   const value = canonicalResourceName(selected);
   return `<option value="">Ressource wählen</option>${options(CAPACITY_RESOURCES, value)}`;
 }
+function demandResourceOptions(selected = "") {
+  const value = canonicalResourceName(selected);
+  return `<option value="">Ressource wählen</option>${options(DEMAND_RESOURCES, value)}`;
+}
 function setRoleSelect(selector, value, emptyLabel) {
   const normalized = canonicalResourceName(value);
   const isEmpty = ["offen", "nach bedarf", "noch nicht definiert"].includes(normalized.toLowerCase());
@@ -789,8 +808,9 @@ function renderDemandEditor() {
     const window = phaseMonthWindow(phase, CURRENT_MONTH);
     const statusText = window.startMonth ? `${monthLabel(window.startMonth)} bis ${monthLabel(window.endMonth)}` : "Phasenzeitraum noch offen";
     return `<div class="demand-card" data-demand="${index}">
-      <div class="demand-summary simple"><label><span>Projektphase</span><select class="d-phase">${phaseOptions(demand.phaseKey)}</select></label><label><span>Person oder Firma</span><select class="d-name">${capacityResourceOptions(demand.name)}</select></label><label><span>Noch benötigte PT</span><input class="d-remaining" type="number" min="0.5" step=".5" value="${esc(demand.remainingPt)}" placeholder="z. B. 18"></label><button type="button" class="remove" data-remove-demand="${index}" aria-label="Ressourcenbedarf löschen">×</button></div>
-      <div class="planning-state"><strong>${esc(statusText)}</strong><span>Dieser eine Wert gilt für die ganze Phase. Das BauRadar verteilt ihn nicht auf Monate.</span>${demand.migrationNote ? `<small>${esc(demand.migrationNote)}</small>` : ""}</div>
+      <div class="demand-summary simple"><label><span>Projektphase</span><select class="d-phase">${phaseOptions(demand.phaseKey)}</select></label><label><span>Person oder Firma</span><select class="d-name">${demandResourceOptions(demand.name)}</select></label><label><span>Noch benötigte PT</span><input class="d-remaining" type="number" min="0.5" step=".5" value="${esc(demand.remainingPt)}" placeholder="z. B. 18"></label><button type="button" class="remove" data-remove-demand="${index}" aria-label="Ressourcenbedarf löschen">×</button></div>
+      <div class="planning-state"><strong>${esc(statusText)}</strong><span>${isOfficeUnassigned(demand.name) ? "Offener Aufwand der Geschäftsstelle: noch keiner Person zugeteilt. Keine zusätzliche Kapazität und keine Freigabe, bis zugeteilt." : "Dieser eine Wert gilt für die ganze Phase. Das BauRadar verteilt ihn nicht auf Monate."}</span>${demand.migrationNote ? `<small>${esc(demand.migrationNote)}</small>` : ""}</div>
+      ${isOfficeUnassigned(demand.name) ? `<div class="office-assign"><div><strong>Personentage zuordnen</strong><small>Die gewählten PT werden hier abgezogen und bei der Person in derselben Phase hinzugefügt – kein doppelter Bedarf.</small></div><label><span>Person</span><select class="d-assign-person">${options(OFFICE_PEOPLE, "", "Person wählen")}</select></label><label><span>PT</span><input class="d-assign-pt" type="number" min="0.5" step=".5" max="${esc(demand.remainingPt)}" placeholder="z. B. 4"></label><button type="button" class="button primary" data-allocate-office="${index}">PT zuteilen</button></div>` : ""}
     </div>`;
   }).join("") : '<div class="empty-note">Noch kein Ressourcenbedarf eingetragen.</div>';
 }
@@ -1073,6 +1093,22 @@ $("#add-demand").addEventListener("click", () => {
   renderDemandEditor();
 });
 $("#demand-editor").addEventListener("click", event => {
+  const allocate = event.target.closest("[data-allocate-office]");
+  if (allocate) {
+    const row = allocate.closest("[data-demand]");
+    const groupId = editDemands[Number(allocate.dataset.allocateOffice)]?.id;
+    const person = row.querySelector(".d-assign-person")?.value;
+    const pt = row.querySelector(".d-assign-pt")?.value;
+    syncEditors();
+    try {
+      editDemands = allocateOfficeDemand(editDemands, { groupId, person, pt, newId: uuid("d") });
+      renderDemandEditor();
+      toast(`${pt} PT von der Geschäftsstelle an ${person} zugeteilt`);
+    } catch (error) {
+      toast(error.message);
+    }
+    return;
+  }
   const removeDemand = event.target.closest("[data-remove-demand]");
   if (removeDemand) {
     syncEditors();
@@ -1193,7 +1229,7 @@ $("#capacity-list").addEventListener("click", event => {
   if (row) openCapacity(row.dataset.editCapacity);
 });
 $("#resource-focus").addEventListener("change", renderResources);
-[$("#resource-chart"), $("#resource-matrix")].forEach(element => element.addEventListener("click", event => {
+[$("#resource-chart"), $("#resource-matrix"), $("#office-open-work")].forEach(element => element.addEventListener("click", event => {
   const target = event.target.closest("[data-edit-project]");
   if (target) openProject(target.dataset.editProject);
 }));
