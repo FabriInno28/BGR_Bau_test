@@ -11,7 +11,14 @@ import {
   validateDemand,
   validateFinanceEntry,
   validatePhaseTransitions,
-  ROLE_OPTIONS
+  ROLE_OPTIONS,
+  CAPACITY_RESOURCES,
+  DEMAND_RESOURCES,
+  OFFICE_PEOPLE,
+  OFFICE_UNASSIGNED,
+  allocateOfficeDemand,
+  isOfficeUnassigned,
+  canonicalDemandName
 } from "./model.js";
 
 function capacities(values) {
@@ -252,4 +259,65 @@ test("grosse Phasentore verlangen den Gesamtvorstand", () => {
     gateHistory: [{ phaseKey: "machbarkeit", status: "mit Auflagen", authority: "Gesamtvorstand", date: "2026-12-15" }]
   });
   assert.deepEqual(ok, []);
+});
+
+
+test("Geschäftsstelle: Roli, Mark und Stefan einzeln verfügbar; Gruppe nur offener Bedarf", () => {
+  for (const name of OFFICE_PEOPLE) {
+    assert.equal(CAPACITY_RESOURCES.includes(name), true);
+    assert.equal(DEMAND_RESOURCES.includes(name), true);
+    assert.equal(ROLE_OPTIONS.includes(name), true);
+    assert.deepEqual(validateDemand({ name, remainingPt: 4 }), []);
+  }
+  assert.equal(CAPACITY_RESOURCES.includes(OFFICE_UNASSIGNED), false);
+  assert.equal(DEMAND_RESOURCES.includes(OFFICE_UNASSIGNED), true);
+  assert.equal(ROLE_OPTIONS.includes("Geschäftsstelle"), true);
+  assert.equal(ROLE_OPTIONS.includes(OFFICE_UNASSIGNED), false);
+  assert.equal(isOfficeUnassigned(OFFICE_UNASSIGNED), true);
+  assert.deepEqual(validateDemand({ name: OFFICE_UNASSIGNED, remainingPt: 12 }), []);
+  assert.equal(canonicalDemandName("Geschäftsstelle"), OFFICE_UNASSIGNED);
+});
+
+test("Zuteilung aus Gruppentopf erhält die Gesamt-PT und senkt den Gruppenrest", () => {
+  const before = [{ id: "gs", name: OFFICE_UNASSIGNED, phaseKey: "planung", remainingPt: "20" }];
+  const after = allocateOfficeDemand(before, { groupId: "gs", person: "Mark", pt: 8, newId: "mark" });
+  assert.equal(before[0].remainingPt, "20", "keine Mutation gespeicherter Daten");
+  assert.equal(after.find(row => row.id === "gs").remainingPt, "12");
+  assert.equal(after.find(row => row.id === "mark").remainingPt, "8");
+  assert.equal(after.reduce((sum, row) => sum + Number(row.remainingPt), 0), 20);
+  const next = allocateOfficeDemand(after, { groupId: "gs", person: "Mark", pt: 5, newId: "unused" });
+  assert.equal(next.length, 2, "bereits erfasster Personalbedarf wird addiert, nicht dupliziert");
+  assert.equal(next.find(row => row.name === "Mark").remainingPt, "13");
+  assert.equal(next.find(row => row.id === "gs").remainingPt, "7");
+  const final = allocateOfficeDemand(next, { groupId: "gs", person: "Roli", pt: 7, newId: "roli" });
+  assert.equal(final.some(row => row.id === "gs"), false, "Gruppentopf verschwindet bei vollständiger Zuteilung");
+  assert.equal(final.reduce((sum, row) => sum + Number(row.remainingPt), 0), 20);
+});
+
+test("Zuteilung bleibt in der Projektphase und überschreibt andere Phasen nicht", () => {
+  const before = [
+    { id: "gs", name: OFFICE_UNASSIGNED, phaseKey: "realisierung", remainingPt: "10" },
+    { id: "mark-alt", name: "Mark", phaseKey: "planung", remainingPt: "4" }
+  ];
+  const after = allocateOfficeDemand(before, { groupId: "gs", person: "Mark", pt: 3, newId: "mark-bau" });
+  assert.equal(after.find(row => row.id === "mark-alt").remainingPt, "4");
+  assert.equal(after.find(row => row.id === "mark-bau").phaseKey, "realisierung");
+  assert.equal(after.find(row => row.id === "gs").remainingPt, "7");
+});
+
+test("Überzuteilung, Null, ungültige Person und offene PT ändern Gruppentopf nicht", () => {
+  const before = [{ id: "gs", name: OFFICE_UNASSIGNED, phaseKey: "planung", remainingPt: "5" }];
+  for (const [person, pt] of [["Roli", 6], ["Mark", 0], ["BK", 3], ["Stefan", ""]]) {
+    assert.throws(() => allocateOfficeDemand(before, { groupId: "gs", person, pt, newId: "x" }));
+    assert.equal(before[0].remainingPt, "5");
+  }
+  assert.throws(() => allocateOfficeDemand([{ ...before[0], remainingPt: "" }], { groupId: "gs", person: "Stefan", pt: 2, newId: "x" }));
+});
+
+test("Alte Gruppennennung bei Bedarfsimport wird als noch nicht zugeteilt gelesen", () => {
+  const migrated = migrateState({
+    projects: [{ id: "p", demands: [{ id: "old-gs", name: "Geschäftsstelle", phaseKey: "planung", remainingPt: "12" }] }]
+  });
+  assert.equal(migrated.projects[0].demands[0].name, OFFICE_UNASSIGNED);
+  assert.deepEqual(validateDemand(migrated.projects[0].demands[0]), []);
 });
