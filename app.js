@@ -374,7 +374,11 @@ function projectIssues(project) {
   for (const demand of project.demands) {
     const item = allPhaseDemands().find(entry => entry.id === demand.id);
     if (item?.past) continue;
-    if (isOfficeUnassigned(demand.name)) issues.push(`${phaseInfo(demand.phaseKey).short}: ${demand.remainingPt || "offene"} PT der Geschäftsstelle noch nicht namentlich zugeteilt`);
+    if (isOfficeUnassigned(demand.name)) {
+      issues.push(`${phaseInfo(demand.phaseKey).short}: ${demand.remainingPt || "offene"} PT der Geschäftsstelle noch nicht namentlich zugeteilt`);
+      if (nullableNumberValue(demand.remainingPt) == null) issues.push("Geschäftsstelle: Restbedarf noch nicht erfasst");
+      continue;
+    }
     if (nullableNumberValue(demand.remainingPt) == null) issues.push(`${demand.name || "Ressource"}: Restbedarf noch nicht erfasst`);
     else if (!item?.startMonth || !item?.endMonth) issues.push(`${demand.name}: ${phaseInfo(demand.phaseKey).short} zeitlich noch nicht beurteilbar`);
     else {
@@ -476,7 +480,7 @@ function focusResourceWarning(name, project = null) {
   return true;
 }
 function focusProjectResourceWarning(project) {
-  const candidates = [...new Set(project.demands.map(demand => canonicalResourceName(demand.name)).filter(Boolean))].map(name => {
+  const candidates = [...new Set(project.demands.map(demand => canonicalResourceName(demand.name)).filter(name => name && !isOfficeUnassigned(name)))].map(name => {
     const key = resourceKey(name);
     const assessment = assessmentForResource(key);
     const warning = assessmentWarning(name, assessment);
