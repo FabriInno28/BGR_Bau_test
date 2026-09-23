@@ -646,6 +646,9 @@ function renderDetail() {
     </div>`;
 }
 function renderResources() {
+  const officeOpen = allPhaseDemands().filter(item => !item.past && isOfficeUnassigned(item.name));
+  const officePt = officeOpen.reduce((total, item) => total + (item.pt ?? 0), 0);
+  $("#office-open-work").innerHTML = `<div><span>Geschäftsstelle · noch nicht zugeteilt</span><strong>${officePt} PT offen</strong><small>${officeOpen.length} Projektphasen mit offenem Zuteilungsbedarf. Diese PT sind keine zusätzliche Kapazität.</small></div><div class="office-open-projects">${officeOpen.length ? officeOpen.map(item => `<button type="button" data-edit-project="${esc(item.project.id)}"><strong>${esc(item.project.object)}</strong><span>${esc(phaseInfo(item.demand.phaseKey).label)} · ${item.pt == null ? "PT offen" : `${item.pt} PT`}</span></button>`).join("") : '<span>Aktuell kein unzugeteilter Bedarf der Geschäftsstelle erfasst.</span>'}</div>`;
   const groups = resourceGroups();
   const select = $("#resource-focus");
   const previous = select.value;
@@ -702,11 +705,13 @@ function renderResources() {
   const phaseRows = allPhaseDemands().sort((a, b) => a.project.object.localeCompare(b.project.object, "de") || phaseIndex(a.demand.phaseKey) - phaseIndex(b.demand.phaseKey));
   $("#resource-matrix").innerHTML = phaseRows.length ? `<table class="resource-matrix phase-resource-table"><thead><tr><th>Projekt und Phase</th><th>Zeitraum</th><th>Ressource</th><th>Restbedarf</th><th>Beurteilung</th></tr></thead><tbody>${phaseRows.map(item => {
     const status = demandStatus(item);
-    const assessment = assessmentForResource(item.resourceKey);
-    const itemBottleneck = assessment.bottleneck?.involvedIds.includes(item.id) ? assessment.bottleneck : null;
-    const itemConfirmation = assessment.confirmation?.involvedIds.includes(item.id) ? assessment.confirmation : null;
+    const assessment = isOfficeUnassigned(item.name) ? null : assessmentForResource(item.resourceKey);
+    const itemBottleneck = assessment?.bottleneck?.involvedIds.includes(item.id) ? assessment.bottleneck : null;
+    const itemConfirmation = assessment?.confirmation?.involvedIds.includes(item.id) ? assessment.confirmation : null;
     const detail = item.past
       ? "Die Phase liegt vollständig in der Vergangenheit und wird nicht gegen künftige Kapazität gerechnet."
+      : isOfficeUnassigned(item.name)
+      ? "Aufwand der Geschäftsstelle ist noch nicht Roli, Mark oder Stefan zugeteilt. Zuteilung im Projekt reduziert den offenen Gruppentopf."
       : status === "gap" && itemBottleneck
       ? `${monthLabel(itemBottleneck.startMonth)} bis ${monthLabel(itemBottleneck.endMonth)}: ${itemBottleneck.demand} PT Bedarf, ${itemBottleneck.capacity} PT verfügbar, ${itemBottleneck.shortfall} PT fehlen.`
       : status === "watch" && itemBottleneck
@@ -717,7 +722,7 @@ function renderResources() {
           ? item.pt == null ? "Noch benötigte PT fehlen." : !item.startMonth ? "Die Phase hat noch kein vollständiges Zeitfenster." : "Für benötigte Monate fehlt die bestätigte Verfügbarkeit."
           : "Der Restbedarf ist innerhalb des Phasenfensters rechnerisch tragbar.";
     const rowUnsecured = status === "open" && itemConfirmation?.unconfirmedNeeded > 0;
-    const statusLabel = item.past ? "Vergangene Phase" : rowUnsecured ? "Kapazität nicht abgesichert" : RESOURCE_STATUS[status].label;
+    const statusLabel = item.past ? "Vergangene Phase" : isOfficeUnassigned(item.name) ? "Zuteilung offen" : rowUnsecured ? "Kapazität nicht abgesichert" : RESOURCE_STATUS[status].label;
     return `<tr class="phase-resource-row ${status} ${rowUnsecured ? "unsecured" : ""}" data-edit-project="${esc(item.project.id)}"><td><strong>${esc(item.project.object)}</strong><small>${esc(phaseInfo(item.demand.phaseKey).label)}</small></td><td>${item.startMonth ? `${monthLabel(item.startMonth)} bis ${monthLabel(item.endMonth)}` : "noch offen"}</td><td><strong>${esc(item.name || "offen")}</strong></td><td>${item.pt == null ? "offen" : `${item.pt} PT`}</td><td><span class="resource-status ${status} ${rowUnsecured ? "unsecured" : ""}">${esc(statusLabel)}</span><small>${esc(detail)}</small></td></tr>`;
   }).join("")}</tbody></table>` : '<div class="empty-note">Noch kein Restbedarf erfasst. Im Projekt wird je Ressource und Phase genau ein Wert eingetragen.</div>';
 }
@@ -1224,7 +1229,7 @@ $("#capacity-list").addEventListener("click", event => {
   if (row) openCapacity(row.dataset.editCapacity);
 });
 $("#resource-focus").addEventListener("change", renderResources);
-[$("#resource-chart"), $("#resource-matrix")].forEach(element => element.addEventListener("click", event => {
+[$("#resource-chart"), $("#resource-matrix"), $("#office-open-work")].forEach(element => element.addEventListener("click", event => {
   const target = event.target.closest("[data-edit-project]");
   if (target) openProject(target.dataset.editProject);
 }));
