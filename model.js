@@ -1,14 +1,21 @@
 export const SCHEMA_VERSION = 7;
 
+// Personen erhalten bestätigte Projektkapazitäten; die Gruppe ist nur offener Bedarf.
+export const OFFICE_PEOPLE = ["Roli", "Mark", "Stefan"];
+export const OFFICE_UNASSIGNED = "Geschäftsstelle (noch nicht zugeteilt)";
+
 export const CAPACITY_RESOURCES = [
   "Iris",
   "Alex",
   "Fabri",
+  ...OFFICE_PEOPLE,
   "TRESTO",
   "Büro 8",
   "externer Partner"
 ];
 
+export const DEMAND_RESOURCES = [...CAPACITY_RESOURCES, OFFICE_UNASSIGNED];
+// Verantwortung ist von der verfügbaren Kapazität getrennt.
 export const ROLE_OPTIONS = [...CAPACITY_RESOURCES, "Geschäftsstelle", "BK", "BHB"];
 
 export function clone(value) {
@@ -60,6 +67,13 @@ export function canonicalResourceName(value) {
     irisammann: "Iris",
     alex: "Alex",
     fabri: "Fabri",
+    roli: "Roli",
+    rolandpeter: "Roli",
+    mark: "Mark",
+    markfischer: "Mark",
+    stefan: "Stefan",
+    stefanlotscher: "Stefan",
+    geschaftsstellenochnichtzugeteilt: OFFICE_UNASSIGNED,
     tresto: "TRESTO",
     buro8: "Büro 8",
     externerpartner: "externer Partner",
@@ -71,6 +85,44 @@ export function canonicalResourceName(value) {
     bauherrenbegleitung: "BHB"
   };
   return aliases[resourceKey(raw)] || raw;
+}
+
+export function isOfficeUnassigned(value) {
+  return canonicalResourceName(value) === OFFICE_UNASSIGNED;
+}
+
+export function canonicalDemandName(value) {
+  const name = canonicalResourceName(value);
+  // Eine ältere Bedarfszeile "Geschäftsstelle" meint die Gruppe, nicht eine Person.
+  return name === "Geschäftsstelle" ? OFFICE_UNASSIGNED : name;
+}
+
+/** Bereits eingeplante PT der Geschäftsstelle innerhalb derselben Phase zuteilen.
+ * Die Gruppensumme sinkt um exakt den zugewiesenen Wert. Keine Verdoppelung.
+ */
+export function allocateOfficeDemand(demands, { groupId, person, pt, newId }) {
+  const target = canonicalResourceName(person);
+  const allocation = nullableNumberValue(pt);
+  if (!OFFICE_PEOPLE.includes(target)) throw new Error("Bitte Roli, Mark oder Stefan wählen");
+  if (allocation == null || allocation <= 0) throw new Error("Bitte positive Personentage zuweisen");
+  const rows = clone(demands);
+  const index = rows.findIndex(row => row.id === groupId && isOfficeUnassigned(row.name));
+  if (index < 0) throw new Error("Offener Bedarf der Geschäftsstelle nicht gefunden");
+  const group = rows[index];
+  const remaining = nullableNumberValue(group.remainingPt);
+  if (remaining == null || allocation > remaining) throw new Error("Zuteilung übersteigt den offenen Bedarf");
+  const assigned = rows.find(row => row.phaseKey === group.phaseKey && canonicalResourceName(row.name) === target);
+  if (assigned) {
+    const previous = nullableNumberValue(assigned.remainingPt);
+    if (previous == null) throw new Error("Bereits erfasste Personentage zuerst klären");
+    assigned.remainingPt = String(previous + allocation);
+  } else {
+    if (!newId || rows.some(row => row.id === newId)) throw new Error("Neue Ressourcen-ID fehlt oder ist bereits vergeben");
+    rows.push({ id: newId, name: target, phaseKey: group.phaseKey, remainingPt: String(allocation) });
+  }
+  if (remaining === allocation) rows.splice(index, 1);
+  else group.remainingPt = String(remaining - allocation);
+  return rows;
 }
 
 export function monthIndex(month) {
@@ -132,7 +184,7 @@ function migrateLegacyDemand(demand) {
     return {
       ...demand,
       id: demand.id || uuid("d"),
-      name: canonicalResourceName(demand.name),
+      name: canonicalDemandName(demand.name),
       phaseKey: demand.phaseKey || "anlass",
       remainingPt: demand.remainingPt ?? demand.pt ?? ""
     };
@@ -143,7 +195,7 @@ function migrateLegacyDemand(demand) {
   const hasLegacyValue = legacyMin !== "" || legacyMax !== "" || legacyAllocations.length > 0;
   return {
     id: demand.id || uuid("d"),
-    name: canonicalResourceName(demand.name),
+    name: canonicalDemandName(demand.name),
     phaseKey: demand.phaseKey || "anlass",
     remainingPt: "",
     legacyDemand: hasLegacyValue ? { minimum: legacyMin, maximum: legacyMax, allocations: clone(legacyAllocations) } : null,
@@ -205,7 +257,7 @@ export function validateDemand(demand) {
   const errors = [];
   const name = canonicalResourceName(demand.name);
   if (!name) errors.push("Ressource fehlt");
-  if (name && !CAPACITY_RESOURCES.includes(name)) errors.push("Diese Auswahl gehört zu den Rollen und ist keine Kapazitätsressource");
+  if (name && !DEMAND_RESOURCES.includes(name)) errors.push("Diese Auswahl gehört zu den Rollen und ist keine Kapazitätsressource");
   const pt = nullableNumberValue(demand.remainingPt);
   if (pt == null) errors.push("Noch benötigte PT fehlen");
   else if (pt <= 0) errors.push("Noch benötigte PT müssen grösser als 0 sein");
