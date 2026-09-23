@@ -645,7 +645,7 @@ function renderDetail() {
         return `<div class="mini-resource ${status}"><div><strong>${esc(demand.name)}</strong><span>${phaseInfo(demand.phaseKey).short} · ${esc(statusLabel)}</span></div><b>${nullableNumberValue(demand.remainingPt) == null ? "offen" : `${num(demand.remainingPt)} PT`}</b></div>`;
       }).join("") : '<div class="empty-note">Noch kein Ressourcenbedarf eingetragen.</div>'}</div>
       ${issues.length ? `<div class="issue-list">${issues.slice(0, 5).map(issue => `<span>${esc(issue)}</span>`).join("")}</div>` : ""}
-      <div class="project-actions"><button class="button primary" data-edit-project="${esc(project.id)}">Projekt planen</button><button class="button ghost" data-focus-resource="${esc(resourceKey(resources[0]?.name || ""))}">Ressourcenwirkung</button></div>
+      <div class="project-actions"><button class="button primary" data-edit-project="${esc(project.id)}">Projekt planen</button><button class="button ghost" data-focus-resource="${esc(resourceKey(resources.find(item => !isOfficeUnassigned(item.name))?.name || ""))}" data-focus-office="${resources.some(item => isOfficeUnassigned(item.name)) ? "true" : ""}">Ressourcenwirkung</button></div>
       ${changedProject(project) && state.mode === "sharp" ? `<button class="restore-link" data-restore="${esc(project.id)}">Planung auf Stand Mutterliste zurücksetzen</button>` : ""}
     </div>`;
 }
@@ -1063,6 +1063,8 @@ $("#project-detail").addEventListener("click", event => {
     $("#resource-focus").value = focus.dataset.focusResource;
     renderResources();
     $("#ressourcen").scrollIntoView({ behavior: "smooth" });
+  } else if (focus?.dataset.focusOffice) {
+    $("#office-open-work").scrollIntoView({ behavior: "smooth", block: "start" });
   }
 });
 $("#edit-selected").addEventListener("click", () => openProject(selectedId));
