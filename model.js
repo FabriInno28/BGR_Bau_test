@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 8;
+export const SCHEMA_VERSION = 9;
 
 // Personen erhalten bestätigte Projektkapazitäten; die Gruppe ist nur offener Bedarf.
 export const OFFICE_PEOPLE = ["Roli", "Mark", "Stefan"];
@@ -118,7 +118,7 @@ export function allocateOfficeDemand(demands, { groupId, person, pt, newId }) {
     assigned.remainingPt = String(previous + allocation);
   } else {
     if (!newId || rows.some(row => row.id === newId)) throw new Error("Neue Ressourcen-ID fehlt oder ist bereits vergeben");
-    rows.push({ id: newId, name: target, phaseKey: group.phaseKey, remainingPt: String(allocation) });
+    rows.push({ id: newId, name: target, phaseKey: group.phaseKey, remainingPt: String(allocation), hoursPerPt: group.hoursPerPt || 8, hourlyRate: "" });
   }
   if (remaining === allocation) rows.splice(index, 1);
   else group.remainingPt = String(remaining - allocation);
@@ -186,7 +186,9 @@ function migrateLegacyDemand(demand) {
       id: demand.id || uuid("d"),
       name: canonicalDemandName(demand.name),
       phaseKey: demand.phaseKey || "anlass",
-      remainingPt: demand.remainingPt ?? demand.pt ?? ""
+      remainingPt: demand.remainingPt ?? demand.pt ?? "",
+      hoursPerPt: demand.hoursPerPt ?? 8,
+      hourlyRate: demand.hourlyRate ?? ""
     };
   }
   const legacyMin = demand.totalMin ?? demand.min ?? "";
@@ -198,6 +200,8 @@ function migrateLegacyDemand(demand) {
     name: canonicalDemandName(demand.name),
     phaseKey: demand.phaseKey || "anlass",
     remainingPt: "",
+    hoursPerPt: 8,
+    hourlyRate: "",
     legacyDemand: hasLegacyValue ? { minimum: legacyMin, maximum: legacyMax, allocations: clone(legacyAllocations) } : null,
     migrationNote: hasLegacyValue
       ? `Frühere Bandbreite ${legacyMin || "offen"} bis ${legacyMax || "offen"} PT gesichert. Restbedarf bewusst neu beurteilen.`
