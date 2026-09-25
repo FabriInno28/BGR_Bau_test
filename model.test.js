@@ -321,3 +321,23 @@ test("Alte Gruppennennung bei Bedarfsimport wird als noch nicht zugeteilt gelese
   assert.equal(migrated.projects[0].demands[0].name, OFFICE_UNASSIGNED);
   assert.deepEqual(validateDemand(migrated.projects[0].demands[0]), []);
 });
+
+
+test("Schema 8 bleibt mit den Geschäftsstelle-Ressourcen kompatibel", () => {
+  assert.equal(SCHEMA_VERSION, 8);
+  assert.equal(CAPACITY_RESOURCES.includes("Roli"), true);
+  assert.equal(CAPACITY_RESOURCES.includes("Mark"), true);
+  assert.equal(CAPACITY_RESOURCES.includes("Stefan"), true);
+});
+
+test("ein nur geplanter Phasentorentscheid gilt noch nicht als Freigabe", () => {
+  const issues = validatePhaseTransitions({
+    currentPhaseKey: "planerwahl",
+    phasePlan: [
+      { phaseKey: "machbarkeit", status: "done", startQuarter: "2026-Q3", endQuarter: "2026-Q4" },
+      { phaseKey: "planerwahl", status: "current", startQuarter: "2027-Q1", endQuarter: "2027-Q1" }
+    ],
+    gateHistory: [{ phaseKey: "machbarkeit", status: "geplant", authority: "Gesamtvorstand", date: "2026-12-15" }]
+  });
+  assert.equal(issues[0].type, "notApproved");
+});
