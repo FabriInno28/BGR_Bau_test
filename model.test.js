@@ -324,7 +324,7 @@ test("Alte Gruppennennung bei Bedarfsimport wird als noch nicht zugeteilt gelese
 
 
 test("Schema 8 bleibt mit den Geschäftsstelle-Ressourcen kompatibel", () => {
-  assert.equal(SCHEMA_VERSION, 8);
+  assert.equal(SCHEMA_VERSION, 9);
   assert.equal(CAPACITY_RESOURCES.includes("Roli"), true);
   assert.equal(CAPACITY_RESOURCES.includes("Mark"), true);
   assert.equal(CAPACITY_RESOURCES.includes("Stefan"), true);
@@ -355,4 +355,28 @@ test("Keine Tätigkeit darf ein erforderliches Phasentor nicht überspringen", (
   });
   assert.equal(issues[0].phaseKey, "machbarkeit");
   assert.equal(issues[0].type, "notApproved");
+});
+
+
+test("Ressourcenbedarf migriert Stunden und Stundensatz", () => {
+  const migrated = migrateState({
+    projects: [{
+      id: "p-cost",
+      demands: [{ id: "d-cost", name: "Mark", phaseKey: "planung", remainingPt: "10" }]
+    }]
+  });
+  const demand = migrated.projects[0].demands[0];
+  assert.equal(demand.hoursPerPt, 8);
+  assert.equal(demand.hourlyRate, "");
+});
+
+test("Zuteilung aus Geschäftsstelle übernimmt Stunden pro PT und lässt Ansatz bewusst offen", () => {
+  const rows = allocateOfficeDemand(
+    [{ id: "gs-cost", name: OFFICE_UNASSIGNED, phaseKey: "planung", remainingPt: "10", hoursPerPt: 8, hourlyRate: "" }],
+    { groupId: "gs-cost", person: "Mark", pt: 4, newId: "mark-cost" }
+  );
+  const assigned = rows.find(row => row.id === "mark-cost");
+  assert.equal(assigned.hoursPerPt, 8);
+  assert.equal(assigned.hourlyRate, "");
+  assert.equal(assigned.remainingPt, "4");
 });
