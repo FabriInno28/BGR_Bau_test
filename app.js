@@ -333,6 +333,7 @@ let editPhasePlan = [];
 let editDemands = [];
 let editFinances = [];
 let editGateHistory = [];
+let resourceOverviewMode = "project";
 
 function projects() { return activeWorkspace().projects; }
 function capacities() { return activeWorkspace().capacities; }
@@ -517,6 +518,59 @@ function phaseResourceStatus(project, phaseKey) {
   const severity = { ok: 0, watch: 1, open: 2, gap: 3 };
   return items.map(demandStatus).sort((a, b) => severity[b] - severity[a])[0];
 }
+const RESOURCE_SEVERITY = { ok: 0, watch: 1, open: 2, gap: 3 };
+function strongestResourceStatus(statuses = []) {
+  return statuses.length ? statuses.slice().sort((a, b) => RESOURCE_SEVERITY[b] - RESOURCE_SEVERITY[a])[0] : "ok";
+}
+function overviewStatusLabel(status) {
+  return status === "gap" ? "Nicht tragbar" : status === "open" ? "Nicht gesichert" : status === "watch" ? "Knapp" : "Gesichert";
+}
+function relevantResourcePhases(project) {
+  const demanded = new Set(project.demands.map(demand => demand.phaseKey));
+  return project.phasePlan.filter(row =>
+    row.status !== "none" &&
+    (row.phaseKey === project.currentPhaseKey || row.status === "planned" || row.status === "current" || demanded.has(row.phaseKey))
+  );
+}
+function projectResourceOverview(project) {
+  const phases = relevantResourcePhases(project).map(row => ({ row, status: phaseResourceStatus(project, row.phaseKey) }));
+  return { project, phases, status: strongestResourceStatus(phases.map(item => item.status)) };
+}
+function renderResourceOverview() {
+  const container = $("#resource-matrix");
+  const actionOnly = $("#resource-action-only")?.checked ?? true;
+  $$("[data-resource-overview]").forEach(button => button.classList.toggle("active", button.dataset.resourceOverview === resourceOverviewMode));
+  if (resourceOverviewMode === "resource") {
+    const officeItems = allPhaseDemands().filter(item => !item.past && isOfficeUnassigned(item.name));
+    const entries = resourceGroups().map(group => {
+      const assessment = assessmentForResource(group.key);
+      const demands = allPhaseDemands().filter(item => item.resourceKey === group.key && !item.past);
+      return { name: group.name, status: assessment.status, demands };
+    });
+    if (officeItems.length) entries.push({ name: OFFICE_UNASSIGNED, status: "open", demands: officeItems });
+    const visible = entries.filter(entry => !actionOnly || entry.status !== "ok").sort((a,b) => RESOURCE_SEVERITY[b.status] - RESOURCE_SEVERITY[a.status] || a.name.localeCompare(b.name,"de"));
+    container.innerHTML = visible.length ? `<div class="resource-overview-list">${visible.map(entry => {
+      const shown = actionOnly ? entry.demands.filter(item => demandStatus(item) !== "ok") : entry.demands;
+      return `<article class="resource-overview-row ${entry.status}">
+        <div class="overview-main"><span class="status-dot"></span><div><strong>${esc(entry.name)}</strong><small>${entry.demands.length} Bedarfe in ${new Set(entry.demands.map(item => item.project.id)).size} Projekten</small></div></div>
+        <span class="resource-status ${entry.status}">${esc(overviewStatusLabel(entry.status))}</span>
+        <div class="overview-details">${shown.length ? shown.slice(0,6).map(item => `<button type="button" data-edit-project="${esc(item.project.id)}"><strong>${esc(item.project.object)}</strong><span>${esc(phaseInfo(item.demand.phaseKey).label)} · ${esc(overviewStatusLabel(demandStatus(item)))}</span></button>`).join("") : '<span class="overview-ok">Aktuell kein Handlungsbedarf.</span>'}</div>
+      </article>`;
+    }).join("")}</div>` : '<div class="empty-note">Aktuell gibt es in dieser Sicht keinen Handlungsbedarf.</div>';
+    return;
+  }
+  const entries = projects().map(projectResourceOverview)
+    .filter(entry => !actionOnly || entry.status !== "ok")
+    .sort((a,b) => RESOURCE_SEVERITY[b.status] - RESOURCE_SEVERITY[a.status] || a.project.object.localeCompare(b.project.object,"de"));
+  container.innerHTML = entries.length ? `<div class="resource-overview-list">${entries.map(entry => {
+    const shown = actionOnly ? entry.phases.filter(item => item.status !== "ok") : entry.phases;
+    return `<article class="resource-overview-row ${entry.status}" data-edit-project="${esc(entry.project.id)}">
+      <div class="overview-main"><span class="status-dot"></span><div><strong>${esc(entry.project.object)}</strong><small>Aktueller Stand: ${esc(phaseInfo(entry.project.currentPhaseKey).label)}</small></div></div>
+      <span class="resource-status ${entry.status}">${esc(overviewStatusLabel(entry.status))}</span>
+      <div class="overview-details">${shown.length ? shown.map(item => `<span class="overview-phase ${item.status}"><strong>${esc(phaseInfo(item.row.phaseKey).label)}</strong><small>${esc(overviewStatusLabel(item.status))}</small></span>`).join("") : '<span class="overview-ok">Ressourcen aktuell gesichert.</span>'}</div>
+    </article>`;
+  }).join("")}</div>` : '<div class="empty-note">Aktuell gibt es in dieser Sicht keinen Handlungsbedarf.</div>';
+}
 function unassessedNeeds() {
   return allPhaseDemands().filter(item => !item.past && (item.pt == null || !item.startMonth || !item.endMonth || demandStatus(item) === "open"));
 }
@@ -548,6 +602,7 @@ function renderAll() {
 function renderHeader() {
   const workspace = activeWorkspace();
   const planned = projects().reduce((sum, project) => sum + plannedPhases(project).length, 0);
+  const applicable = projects().reduce((sum, project) => sum + project.phasePlan.filter(row => row.status !== "none").length, 0);
   const assessments = allResourceAssessments();
   const gaps = assessments.filter(item => item.status === "gap").length;
   const approved = allFinanceEntries().filter(item => item.status === "approved").reduce((sum, item) => sum + num(item.amount), 0);
@@ -563,7 +618,7 @@ function renderHeader() {
   $("#delete-scenario").classList.toggle("hidden", state.mode !== "scenario");
   $("#kpis").innerHTML = [
     ["Vorhaben", projects().length, "im Portfolio"],
-    ["Geplante Phasen", planned, `von ${projects().length * PHASES.length}`],
+    ["Geplante Phasen", planned, `von ${applicable} relevanten Phasen`],
     ["Kritische Ressourcen", gaps, gaps ? "nicht gemeinsam tragbar" : "keine nachgewiesen"],
     ["Nicht beurteilbare Bedarfe", unassessedNeeds().length, "bleiben sichtbar"],
     ["Finanziell gesichert", chf(approved + bound, true), "freigegeben / gebunden"]
@@ -584,12 +639,12 @@ function filteredProjects() {
 }
 function renderTimeline() {
   const list = filteredProjects().sort((a, b) => qIndex(a.motherQuarter) - qIndex(b.motherQuarter) || a.object.localeCompare(b.object, "de"));
-  $("#phase-legend").innerHTML = PHASES.map(phase => `<span><i class="${phase.className}"></i>${phase.short}</span>`).join("");
+  $("#phase-legend").innerHTML = PHASES.map(phase => `<span><i class="${phase.className}"></i>${esc(phase.label)}</span>`).join("");
   const header = `<div class="timeline-header"><div>${list.length} Projekte</div>${DISPLAY_QUARTERS.map(quarter => `<div>${qLabel(quarter)}</div>`).join("")}</div>`;
   const rows = list.map(project => {
     const issues = projectIssues(project);
     return `<div class="timeline-row ${project.id === selectedId ? "selected" : ""}" data-select="${esc(project.id)}">
-      <div class="project-label"><strong>${esc(project.object)}</strong><span>${esc(project.measure)} · ${esc(project.kind)}</span>${issues.length ? '<i class="pressure-dot" title="Klärungsbedarf"></i>' : ""}</div>
+      <div class="project-label"><strong>${esc(project.object)}</strong><span>${esc(project.measure)} · ${esc(project.kind)} · <b class="project-current-phase ${phaseInfo(project.currentPhaseKey).className}">${esc(phaseInfo(project.currentPhaseKey).short)}</b></span>${issues.length ? '<i class="pressure-dot" title="Klärungsbedarf"></i>' : ""}</div>
       ${DISPLAY_QUARTERS.map(quarter => {
         const phases = plansAt(project, quarter);
         const mother = project.motherQuarter === quarter;
@@ -609,7 +664,7 @@ function renderLongHorizon() {
   $("#long-horizon").classList.toggle("hidden", !longOpen);
   $("#expand-long").textContent = longOpen ? "Jahre 4 bis 10 ausblenden" : "Jahre 4 bis 10 einblenden";
   $("#long-horizon").innerHTML = `<div class="long-title"><strong>Mittelfrist und Langfrist</strong><span>Phasen mit eingetragener Planung</span></div><div class="long-grid">${years.map(year => {
-    const entries = projects().flatMap(project => project.phasePlan.filter(row => row.startQuarter && (year === "10+" ? parseInt(row.startQuarter, 10) > CURRENT_YEAR + 10 : parseInt(row.startQuarter, 10) === year)).map(row => ({ project, row })));
+    const entries = projects().flatMap(project => project.phasePlan.filter(row => row.status !== "none" && row.startQuarter && (year === "10+" ? parseInt(row.startQuarter, 10) > CURRENT_YEAR + 10 : parseInt(row.startQuarter, 10) === year)).map(row => ({ project, row })));
     return `<div class="year-bucket"><strong>${year === "10+" ? "> 10 Jahre" : year}</strong><b>${entries.length}</b><span>${entries.slice(0, 2).map(item => `${esc(item.project.object)} · ${phaseInfo(item.row.phaseKey).short}`).join(" · ") || "noch keine Phase geplant"}</span></div>`;
   }).join("")}</div>`;
 }
@@ -626,28 +681,29 @@ function renderDetail() {
   const issues = projectIssues(project);
   const planned = plannedPhases(project);
   const latestGate = project.gateHistory.slice().sort((a, b) => String(b.date).localeCompare(String(a.date)))[0];
-  const resources = project.demands.slice(0, 4);
+  const resources = project.demands.filter(demand => project.phasePlan.find(row => row.phaseKey === demand.phaseKey)?.status !== "none").slice(0, 4);
+  const bk = project.roles?.bk && String(project.roles.bk).toLowerCase() !== "offen" ? project.roles.bk : "";
   $("#project-detail").innerHTML = `<div class="project-cover"><div class="meta"><span>${esc(project.kind)} · ${state.mode === "scenario" ? "Szenario" : "scharfer Stand"}</span><span class="status-chip">${issues.length ? `${issues.length} Punkte offen` : "Plan prüfbar"}</span></div><h3>${esc(project.object)}</h3><p>${esc(project.measure)}</p></div>
     <div class="project-body">
-      <div class="mother-current"><span>Mutterstand ${DATA_STAND_LABEL}</span><strong>${esc(phaseInfo(project.motherPhaseKey).label)}</strong><small>${project.uncertain ? "Quelle als unsicher markiert · " : ""}${phaseAssignee(project) ? `Verantwortung Arbeitsstand: ${esc(phaseAssignee(project))}` : "Verantwortung Arbeitsstand noch offen"}</small></div>
-      <div class="next-box"><span>Letzter Phasentorentscheid</span><strong>${esc(latestGate?.status || "noch kein Entscheid erfasst")}</strong><small>${latestGate ? `${esc(phaseInfo(latestGate.phaseKey).short)} · ${esc(latestGate.authority)} · ${esc(latestGate.date)}` : "Im Projekt protokollieren"}</small></div>
+      <div class="mother-current"><span>Mutterstand ${DATA_STAND_LABEL}</span><strong>${esc(phaseInfo(project.motherPhaseKey).label)}</strong><small>${project.uncertain ? "Quelle als unsicher markiert · " : ""}${bk ? `Verantwortung Baukommission: ${esc(bk)}` : "Verantwortung Baukommission offen"}</small></div>
+      <div class="next-box"><span>Phasentor</span><strong>${esc(latestGate?.status || "noch kein Entscheid erfasst")}</strong><small>${latestGate ? `${esc(phaseInfo(latestGate.phaseKey).label)} · ${esc(latestGate.authority)} · ${esc(latestGate.date)}` : "Im Projekt planen oder protokollieren"}</small></div>
       <span class="section-label">Alle Projektphasen</span>
       <div class="phase-steps">${PHASES.map(phase => {
         const row = project.phasePlan.find(item => item.phaseKey === phase.key);
+        if (row?.status === "none") return `<button class="phase-step ${phase.className} no-activity" title="${esc(phase.label)} · Keine Tätigkeit" aria-label="${esc(phase.label)}: Keine Tätigkeit"></button>`;
         const resourceStatus = row?.startQuarter ? phaseResourceStatus(project, phase.key) : "open";
         const hasDemand = project.demands.some(demand => demand.phaseKey === phase.key);
-        const statusText = hasDemand ? RESOURCE_STATUS[resourceStatus].label : row?.resourceClarification === "none" ? "kein zusätzlicher Ressourcenbedarf" : "Ressourcenbedarf offen";
-        const responsibility = row?.assignee ? `Verantwortung ${row.assignee}` : "Verantwortung offen";
-        return `<button class="phase-step ${phase.className} resource-${resourceStatus} ${row?.startQuarter ? "done" : ""} ${phase.key === project.currentPhaseKey ? "current" : ""}" title="${esc(phase.label)} · ${responsibility} · ${row?.startQuarter ? `${qLabel(row.startQuarter)} bis ${qLabel(row.endQuarter)} · ${statusText}` : "noch nicht geplant"}" aria-label="${esc(phase.label)}: ${esc(responsibility)}, ${esc(statusText)}"></button>`;
+        const statusText = hasDemand ? RESOURCE_STATUS[resourceStatus].label : "Ressourcenbedarf offen";
+        return `<button class="phase-step ${phase.className} resource-${resourceStatus} ${row?.startQuarter ? "done" : ""} ${phase.key === project.currentPhaseKey ? "current" : ""}" title="${esc(phase.label)} · ${row?.startQuarter ? `${qLabel(row.startQuarter)} bis ${qLabel(row.endQuarter)} · ${statusText}` : "noch nicht geplant"}" aria-label="${esc(phase.label)}: ${esc(statusText)}"></button>`;
       }).join("")}</div>
-      <div class="perspectives"><div class="perspective"><span>Phasen geplant</span><strong>${planned.length} von 7</strong></div><div class="perspective"><span>Ressourcen</span><strong>${project.demands.length || "offen"}</strong></div><div class="perspective"><span>Freigegeben / gebunden</span><strong>${chf(securedCost(project), true)}</strong></div><div class="perspective"><span>Offene Punkte</span><strong>${issues.length}</strong></div></div>
+      <div class="perspectives"><div class="perspective"><span>Phasen geplant</span><strong>${planned.length} von ${project.phasePlan.filter(row => row.status !== "none").length}</strong></div><div class="perspective"><span>Ressourcen</span><strong>${resources.length || "offen"}</strong></div><div class="perspective"><span>Freigegeben / gebunden</span><strong>${chf(securedCost(project), true)}</strong></div><div class="perspective"><span>Offene Punkte</span><strong>${issues.length}</strong></div></div>
       <div class="finance-project-note ${project.finances.length ? "" : "open"}"><strong>${project.finances.length ? "Finanzplanung erfasst" : "Finanzen noch nicht erfasst"}</strong><span>${project.finances.length ? "Die Jahressicht ist im Bereich Finanzen sichtbar." : "Hinweis: Das blockiert weder Planung noch Freigabe."}</span></div>
       <span class="section-label">Ressourcen dieses Projekts</span>
       <div class="mini-resources">${resources.length ? resources.map(demand => {
         const item = allPhaseDemands().find(entry => entry.id === demand.id);
         const status = item ? demandStatus(item) : "open";
         const statusLabel = item?.past ? "Vergangene Phase, nicht mehr geprüft" : RESOURCE_STATUS[status].label;
-        return `<div class="mini-resource ${status}"><div><strong>${esc(demand.name)}</strong><span>${phaseInfo(demand.phaseKey).short} · ${esc(statusLabel)}</span></div><b>${nullableNumberValue(demand.remainingPt) == null ? "offen" : `${num(demand.remainingPt)} PT`}</b></div>`;
+        return `<div class="mini-resource ${status}"><div><strong>${esc(demand.name)}</strong><span>${phaseInfo(demand.phaseKey).label} · ${esc(statusLabel)}</span></div><b>${nullableNumberValue(demand.remainingPt) == null ? "offen" : `${num(demand.remainingPt)} PT`}</b></div>`;
       }).join("") : '<div class="empty-note">Noch kein Ressourcenbedarf eingetragen.</div>'}</div>
       ${issues.length ? `<div class="issue-list">${issues.slice(0, 5).map(issue => `<span>${esc(issue)}</span>`).join("")}</div>` : ""}
       <div class="project-actions"><button class="button primary" data-edit-project="${esc(project.id)}">Projekt planen</button><button class="button ghost" data-focus-resource="${esc(resourceKey(resources.find(item => !isOfficeUnassigned(item.name))?.name || ""))}" data-focus-office="${resources.some(item => isOfficeUnassigned(item.name)) ? "true" : ""}">Ressourcenwirkung</button></div>
@@ -711,29 +767,7 @@ function renderResources() {
     strip.innerHTML = `<strong>${gaps ? `${gaps} nicht tragbare Ressourcenlagen` : unsecuredAssessments.length ? `${unsecuredAssessments.length} Ressourcenlagen nicht abgesichert` : "Keine nachgewiesene Kapazitätslücke"} · ${openNeeds.length} Bedarfe noch nicht beurteilbar</strong><span>${esc(criticalWarning?.message || `${tight} knappe Ressourcenlagen. Geprüft werden gemeinsame Phasenzeitfenster, nicht erfundene Monatsauslastungen.`)}</span>`;
   }
 
-  const phaseRows = allPhaseDemands().sort((a, b) => a.project.object.localeCompare(b.project.object, "de") || phaseIndex(a.demand.phaseKey) - phaseIndex(b.demand.phaseKey));
-  $("#resource-matrix").innerHTML = phaseRows.length ? `<table class="resource-matrix phase-resource-table"><thead><tr><th>Projekt und Phase</th><th>Zeitraum</th><th>Ressource</th><th>Restbedarf</th><th>Beurteilung</th></tr></thead><tbody>${phaseRows.map(item => {
-    const status = demandStatus(item);
-    const assessment = isOfficeUnassigned(item.name) ? null : assessmentForResource(item.resourceKey);
-    const itemBottleneck = assessment?.bottleneck?.involvedIds.includes(item.id) ? assessment.bottleneck : null;
-    const itemConfirmation = assessment?.confirmation?.involvedIds.includes(item.id) ? assessment.confirmation : null;
-    const detail = item.past
-      ? "Die Phase liegt vollständig in der Vergangenheit und wird nicht gegen künftige Kapazität gerechnet."
-      : isOfficeUnassigned(item.name)
-      ? "Aufwand der Geschäftsstelle ist noch nicht Roli, Mark oder Stefan zugeteilt. Zuteilung im Projekt reduziert den offenen Gruppentopf."
-      : status === "gap" && itemBottleneck
-      ? `${monthLabel(itemBottleneck.startMonth)} bis ${monthLabel(itemBottleneck.endMonth)}: ${itemBottleneck.demand} PT Bedarf, ${itemBottleneck.capacity} PT verfügbar, ${itemBottleneck.shortfall} PT fehlen.`
-      : status === "watch" && itemBottleneck
-        ? `${monthLabel(itemBottleneck.startMonth)} bis ${monthLabel(itemBottleneck.endMonth)}: ${Math.round(itemBottleneck.utilization * 100)} Prozent beansprucht.`
-        : status === "open" && itemConfirmation?.unconfirmedNeeded > 0
-          ? `${monthLabel(itemConfirmation.startMonth)} bis ${monthLabel(itemConfirmation.endMonth)}: ${itemConfirmation.demand} PT Bedarf, erst ${itemConfirmation.capacity} PT bestätigt. ${itemConfirmation.unconfirmedNeeded} PT müssen zusätzlich bestätigt werden.`
-        : status === "open"
-          ? item.pt == null ? "Noch benötigte PT fehlen." : !item.startMonth ? "Die Phase hat noch kein vollständiges Zeitfenster." : "Für benötigte Monate fehlt die bestätigte Verfügbarkeit."
-          : "Der Restbedarf ist innerhalb des Phasenfensters rechnerisch tragbar.";
-    const rowUnsecured = status === "open" && itemConfirmation?.unconfirmedNeeded > 0;
-    const statusLabel = item.past ? "Vergangene Phase" : isOfficeUnassigned(item.name) ? "Zuteilung offen" : rowUnsecured ? "Kapazität nicht abgesichert" : RESOURCE_STATUS[status].label;
-    return `<tr class="phase-resource-row ${status} ${rowUnsecured ? "unsecured" : ""}" data-edit-project="${esc(item.project.id)}"><td><strong>${esc(item.project.object)}</strong><small>${esc(phaseInfo(item.demand.phaseKey).label)}</small></td><td>${item.startMonth ? `${monthLabel(item.startMonth)} bis ${monthLabel(item.endMonth)}` : "noch offen"}</td><td><strong>${esc(item.name || "offen")}</strong></td><td>${item.pt == null ? "offen" : `${item.pt} PT`}</td><td><span class="resource-status ${status} ${rowUnsecured ? "unsecured" : ""}">${esc(statusLabel)}</span><small>${esc(detail)}</small></td></tr>`;
-  }).join("")}</tbody></table>` : '<div class="empty-note">Noch kein Restbedarf erfasst. Im Projekt wird je Ressource und Phase genau ein Wert eingetragen.</div>';
+  renderResourceOverview();
 }
 function allFinanceEntries() {
   return projects().flatMap(project => project.finances.map(item => ({ ...item, projectId: project.id, object: project.object })));
