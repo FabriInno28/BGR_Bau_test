@@ -71,12 +71,13 @@ const PHASE_STATUS = {
   done: "Abgeschlossen",
   none: "Keine Tätigkeit"
 };
-const STORE_KEY = "bgr-bauradar-v8";
-const PREVIOUS_STORE_KEY = "bgr-bauradar-v7";
-const OLDER_STORE_KEY = "bgr-bauradar-v5";
-const LEGACY_STORE_KEY = "bgr-bauradar-v4";
-const OLDEST_STORE_KEY = "bgr-portfolio-cockpit-v3";
-const HISTORY_KEY = "bgr-bauradar-v8-history";
+const STORE_KEY = "bgr-bauradar-v9";
+const PREVIOUS_STORE_KEY = "bgr-bauradar-v8";
+const OLDER_STORE_KEY = "bgr-bauradar-v7";
+const LEGACY_STORE_KEY = "bgr-bauradar-v5";
+const OLDEST_STORE_KEY = "bgr-bauradar-v4";
+const VERY_OLD_STORE_KEY = "bgr-portfolio-cockpit-v3";
+const HISTORY_KEY = "bgr-bauradar-v9-history";
 
 const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
@@ -188,6 +189,8 @@ function normalizeProject(project) {
     motherQuarter: project.motherQuarter || BASELINE_QUARTER,
     roles,
     phasePlan,
+    planningDepth: ["detail", "medium", "light"].includes(project.planningDepth) ? project.planningDepth : "detail",
+    roughFinanceK: project.roughFinanceK ?? "",
     finances: Array.isArray(migrated.finances) ? migrated.finances : [],
     gateHistory: Array.isArray(project.gateHistory) ? project.gateHistory : []
   };
@@ -228,6 +231,8 @@ function reconcileBaselineProjects(savedProjects, deletedIds = []) {
       roles: clone(saved.roles),
       phasePlan: clone(saved.phasePlan),
       demands: clone(saved.demands),
+      planningDepth: saved.planningDepth,
+      roughFinanceK: saved.roughFinanceK,
       finances: clone(saved.finances),
       gateHistory: clone(saved.gateHistory),
       nextDecision: saved.nextDecision
@@ -238,7 +243,7 @@ function reconcileBaselineProjects(savedProjects, deletedIds = []) {
 }
 function loadState() {
   try {
-    const raw = localStorage.getItem(STORE_KEY) || localStorage.getItem(PREVIOUS_STORE_KEY) || localStorage.getItem(OLDER_STORE_KEY) || localStorage.getItem(LEGACY_STORE_KEY) || localStorage.getItem(OLDEST_STORE_KEY);
+    const raw = localStorage.getItem(STORE_KEY) || localStorage.getItem(PREVIOUS_STORE_KEY) || localStorage.getItem(OLDER_STORE_KEY) || localStorage.getItem(LEGACY_STORE_KEY) || localStorage.getItem(OLDEST_STORE_KEY) || localStorage.getItem(VERY_OLD_STORE_KEY);
     if (!raw) return emptyState();
     const parsed = JSON.parse(raw);
     const migrated = migrateState(parsed, BASELINE);
