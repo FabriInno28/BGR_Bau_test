@@ -278,9 +278,10 @@ export function validateFinanceEntry(entry) {
 
 export function validatePhaseTransitions({ phasePlan = [], gateHistory = [], currentPhaseKey = "" } = {}) {
   const issues = [];
-  for (let index = 0; index < phasePlan.length - 1; index += 1) {
-    const phase = phasePlan[index];
-    const next = phasePlan[index + 1];
+  const relevantPhases = phasePlan.filter(phase => phase?.status !== "none");
+  for (let index = 0; index < relevantPhases.length - 1; index += 1) {
+    const phase = relevantPhases[index];
+    const next = relevantPhases[index + 1];
     const transitionRelevant = phase?.status === "done"
       && phase.startQuarter
       && phase.endQuarter
