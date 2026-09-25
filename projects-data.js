@@ -1,3 +1,5 @@
+export const BASELINE_META = { version: "2026-08-14", date: "2026-08-14" };
+
 export const BASELINE_PROJECTS = [
   {
     "id": "tg-ruopigenring",
