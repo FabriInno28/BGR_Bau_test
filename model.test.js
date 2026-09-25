@@ -341,3 +341,18 @@ test("ein nur geplanter Phasentorentscheid gilt noch nicht als Freigabe", () => 
   });
   assert.equal(issues[0].type, "notApproved");
 });
+
+
+test("Keine Tätigkeit darf ein erforderliches Phasentor nicht überspringen", () => {
+  const issues = validatePhaseTransitions({
+    currentPhaseKey: "planung",
+    phasePlan: [
+      { phaseKey: "machbarkeit", status: "done", startQuarter: "2026-Q3", endQuarter: "2026-Q4" },
+      { phaseKey: "planerwahl", status: "none", startQuarter: "", endQuarter: "" },
+      { phaseKey: "planung", status: "current", startQuarter: "2027-Q1", endQuarter: "2027-Q2" }
+    ],
+    gateHistory: []
+  });
+  assert.equal(issues[0].phaseKey, "machbarkeit");
+  assert.equal(issues[0].type, "notApproved");
+});
