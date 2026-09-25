@@ -1007,7 +1007,7 @@ function renderResourceCostSummary() {
   }));
   const total = rows.reduce((sum, row) => sum + (row.cost ?? 0), 0);
   const unpriced = rows.filter(row => row.cost == null).length;
-  const groupPt = editDemands.filter(demand => !editPhasePlan.find(row => row.phaseKey === demand.phaseKey)?.status === "none" && isOfficeUnassigned(demand.name)).reduce((sum, demand) => sum + (nullableNumberValue(demand.remainingPt) ?? 0), 0);
+  const groupPt = editDemands.filter(demand => editPhasePlan.find(row => row.phaseKey === demand.phaseKey)?.status !== "none" && isOfficeUnassigned(demand.name)).reduce((sum, demand) => sum + (nullableNumberValue(demand.remainingPt) ?? 0), 0);
   container.innerHTML = `<div class="resource-cost-head"><div><span>Ressourcenkosten aus der Projektplanung</span><strong>${chf(total)}</strong><small>Automatisch aus PT × Stunden/PT × Stundensatz berechnet.</small></div><div class="resource-cost-meta"><span>${rows.length} Ressourcenpositionen</span><span>${unpriced ? `${unpriced} ohne Stundensatz` : "alle Ansätze hinterlegt"}</span></div></div>
     ${rows.length ? `<div class="resource-cost-lines">${rows.map(row => `<div><span><strong>${esc(row.name)}</strong> · ${nullableNumberValue(row.remainingPt) ?? "–"} PT × ${nullableNumberValue(row.hoursPerPt) ?? "–"} h × ${nullableNumberValue(row.hourlyRate) == null ? "Ansatz offen" : chf(row.hourlyRate) + "/h"}</span><b>${row.cost == null ? "offen" : chf(row.cost)}</b></div>`).join("")}</div>` : '<div class="empty-note">Noch keine namentlich zugeteilten Ressourcen mit Kostenbezug.</div>'}
     ${groupPt ? `<p class="resource-cost-open">${groupPt} PT der Geschäftsstelle sind noch nicht namentlich zugeteilt und deshalb noch nicht bewertet.</p>` : ""}`;
@@ -1299,6 +1299,14 @@ $("#timeline").addEventListener("click", event => {
     renderDetail();
   }
 });
+$("#long-horizon").addEventListener("click", event => {
+  const row = event.target.closest("[data-select]");
+  if (!row) return;
+  selectedId = row.dataset.select;
+  renderTimeline();
+  renderDetail();
+  $("#portfolio").scrollIntoView({ behavior: "smooth", block: "start" });
+});
 $("#project-detail").addEventListener("click", event => {
   const edit = event.target.closest("[data-edit-project]");
   if (edit) openProject(edit.dataset.editProject);
@@ -1386,6 +1394,9 @@ $("#demand-editor").addEventListener("click", event => {
     renderDemandEditor();
   }
 });
+$("#demand-editor").addEventListener("input", event => {
+  if (event.target.matches(".d-remaining, .d-hours, .d-rate")) updateDemandCostPreviews();
+});
 $("#demand-editor").addEventListener("change", () => {
   syncEditors();
   renderDemandEditor();
@@ -1394,6 +1405,9 @@ $("#add-finance").addEventListener("click", () => {
   syncEditors();
   editFinances.push({ id: uuid("finance"), year: CURRENT_YEAR, amount: "", status: "estimate", source: "", informationDate: "" });
   renderFinanceEditor();
+});
+$("#finance-editor").addEventListener("input", event => {
+  if (event.target.matches(".pc-amount")) updateFinanceAmountPreviews();
 });
 $("#finance-editor").addEventListener("click", event => {
   const button = event.target.closest("[data-remove-finance]");
