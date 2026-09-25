@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 7;
+export const SCHEMA_VERSION = 8;
 
 // Personen erhalten bestätigte Projektkapazitäten; die Gruppe ist nur offener Bedarf.
 export const OFFICE_PEOPLE = ["Roli", "Mark", "Stefan"];
