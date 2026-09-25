@@ -745,14 +745,41 @@ function renderTimeline() {
   $("#timeline").innerHTML = header + (rows || '<div class="empty-note">Keine Projekte entsprechen dem Filter.</div>');
   renderLongHorizon();
 }
+function projectFirstPlannedYear(project) {
+  const years = project.phasePlan
+    .filter(row => row.status !== "none" && row.startQuarter)
+    .map(row => Number(String(row.startQuarter).slice(0, 4)))
+    .filter(Number.isFinite);
+  return years.length ? Math.min(...years) : null;
+}
+function effectivePlanningDepth(project) {
+  if (project.planningDepth === "medium" || project.planningDepth === "light") return project.planningDepth;
+  const year = projectFirstPlannedYear(project);
+  if (year != null && year > CURRENT_YEAR + 10) return "light";
+  if (year != null && year > CURRENT_YEAR + 3) return "medium";
+  return "detail";
+}
 function renderLongHorizon() {
-  const years = [...Array.from({ length: 7 }, (_, index) => CURRENT_YEAR + 4 + index), "10+"];
   $("#long-horizon").classList.toggle("hidden", !longOpen);
-  $("#expand-long").textContent = longOpen ? "Jahre 4 bis 10 ausblenden" : "Jahre 4 bis 10 einblenden";
-  $("#long-horizon").innerHTML = `<div class="long-title"><strong>Mittelfrist und Langfrist</strong><span>Phasen mit eingetragener Planung</span></div><div class="long-grid">${years.map(year => {
-    const entries = projects().flatMap(project => project.phasePlan.filter(row => row.status !== "none" && row.startQuarter && (year === "10+" ? parseInt(row.startQuarter, 10) > CURRENT_YEAR + 10 : parseInt(row.startQuarter, 10) === year)).map(row => ({ project, row })));
-    return `<div class="year-bucket"><strong>${year === "10+" ? "> 10 Jahre" : year}</strong><b>${entries.length}</b><span>${entries.slice(0, 2).map(item => `${esc(item.project.object)} · ${phaseInfo(item.row.phaseKey).short}`).join(" · ") || "noch keine Phase geplant"}</span></div>`;
-  }).join("")}</div>`;
+  $("#expand-long").textContent = longOpen ? "4–10 Jahre und +10 ausblenden" : "4–10 Jahre und +10 einblenden";
+  const medium = projects().filter(project => effectivePlanningDepth(project) === "medium");
+  const light = projects().filter(project => effectivePlanningDepth(project) === "light");
+  const mediumCards = medium.map(project => {
+    const rows = project.phasePlan.filter(row => row.status !== "none" && row.startQuarter);
+    const first = rows.slice().sort((a,b) => qIndex(a.startQuarter) - qIndex(b.startQuarter))[0];
+    const finance = nullableNumberValue(project.roughFinanceK) != null
+      ? num(project.roughFinanceK) * 1000
+      : project.finances.reduce((sum, item) => sum + num(item.amount), 0);
+    return `<article class="horizon-project medium" data-select="${esc(project.id)}"><span>4–10 Jahre · Grobplanung</span><strong>${esc(project.object)}</strong><small>${first ? `${esc(phaseInfo(first.phaseKey).label)} · ab ${qLabel(first.startQuarter)}` : esc(phaseInfo(project.currentPhaseKey).label)}${project.roles?.bk && project.roles.bk !== "offen" ? ` · BK: ${esc(project.roles.bk)}` : ""}</small><div><b>${finance ? chf(finance, true) : "Finanzen offen"}</b><em>${project.demands.length ? `${project.demands.length} Ressourcenpositionen` : "Ressourcen grob offen"}</em></div></article>`;
+  }).join("");
+  const lightCards = light.map(project => {
+    const year = projectFirstPlannedYear(project);
+    const finance = nullableNumberValue(project.roughFinanceK);
+    return `<article class="horizon-project light" data-select="${esc(project.id)}"><span>+10 Jahre · Perspektive</span><strong>${esc(project.object)}</strong><small>${esc(project.measure || "Vorhaben im Blick behalten")}</small><div><b>${year ? `ab ${year}` : "+10 Jahre"}</b><em>${finance != null ? `Grössenordnung ${chf(finance * 1000, true)}` : "Grössenordnung offen"}${project.nextDecision ? ` · ${esc(project.nextDecision)}` : ""}</em></div></article>`;
+  }).join("");
+  $("#long-horizon").innerHTML = `<div class="long-title"><strong>Planung mit passender Flughöhe</strong><span>1–3 Jahre detailliert · 4–10 Jahre grob · +10 Jahre als strategische Perspektive</span></div>
+    <div class="horizon-section"><div class="horizon-heading"><strong>4–10 Jahre</strong><span>${medium.length} Vorhaben</span></div><div class="horizon-projects">${mediumCards || '<div class="empty-note">Noch keine Vorhaben in der Grobplanung.</div>'}</div></div>
+    <div class="horizon-section"><div class="horizon-heading"><strong>+10 Jahre</strong><span>${light.length} Vorhaben</span></div><div class="horizon-projects light-grid">${lightCards || '<div class="empty-note">Noch keine strategischen Perspektiven erfasst.</div>'}</div></div>`;
 }
 function renderDetail() {
   let project = projects().find(item => item.id === selectedId);
@@ -769,7 +796,9 @@ function renderDetail() {
   const latestGate = project.gateHistory.slice().sort((a, b) => String(b.date).localeCompare(String(a.date)))[0];
   const resources = project.demands.filter(demand => project.phasePlan.find(row => row.phaseKey === demand.phaseKey)?.status !== "none").slice(0, 4);
   const bk = project.roles?.bk && String(project.roles.bk).toLowerCase() !== "offen" ? project.roles.bk : "";
-  $("#project-detail").innerHTML = `<div class="project-cover"><div class="meta"><span>${esc(project.kind)} · ${state.mode === "scenario" ? "Szenario" : "scharfer Stand"}</span><span class="status-chip">${issues.length ? `${issues.length} Punkte offen` : "Plan prüfbar"}</span></div><h3>${esc(project.object)}</h3><p>${esc(project.measure)}</p></div>
+  const resourceCost = projectResourceCostMeta(project);
+  const depth = planningDepthInfo(project);
+  $("#project-detail").innerHTML = `<div class="project-cover"><div class="meta"><span>${esc(project.kind)} · ${esc(depth.short)} · ${state.mode === "scenario" ? "Szenario" : "scharfer Stand"}</span><span class="status-chip">${issues.length ? `${issues.length} Punkte offen` : "Plan prüfbar"}</span></div><h3>${esc(project.object)}</h3><p>${esc(project.measure)}</p></div>
     <div class="project-body">
       <div class="mother-current"><span>Mutterstand ${DATA_STAND_LABEL}</span><strong>${esc(phaseInfo(project.motherPhaseKey).label)}</strong><small>${project.uncertain ? "Quelle als unsicher markiert · " : ""}${bk ? `Verantwortung Baukommission: ${esc(bk)}` : "Verantwortung Baukommission offen"}</small></div>
       <div class="next-box"><span>Phasentor</span><strong>${esc(latestGate?.status || "noch kein Entscheid erfasst")}</strong><small>${latestGate ? `${esc(phaseInfo(latestGate.phaseKey).label)} · ${esc(latestGate.authority)} · ${esc(latestGate.date)}` : "Im Projekt planen oder protokollieren"}</small></div>
@@ -782,7 +811,7 @@ function renderDetail() {
         const statusText = hasDemand ? RESOURCE_STATUS[resourceStatus].label : "Ressourcenbedarf offen";
         return `<button class="phase-step ${phase.className} resource-${resourceStatus} ${row?.startQuarter ? "done" : ""} ${phase.key === project.currentPhaseKey ? "current" : ""}" title="${esc(phase.label)} · ${row?.startQuarter ? `${qLabel(row.startQuarter)} bis ${qLabel(row.endQuarter)} · ${statusText}` : "noch nicht geplant"}" aria-label="${esc(phase.label)}: ${esc(statusText)}"></button>`;
       }).join("")}</div>
-      <div class="perspectives"><div class="perspective"><span>Phasen geplant</span><strong>${planned.length} von ${project.phasePlan.filter(row => row.status !== "none").length}</strong></div><div class="perspective"><span>Ressourcen</span><strong>${resources.length || "offen"}</strong></div><div class="perspective"><span>Freigegeben / gebunden</span><strong>${chf(securedCost(project), true)}</strong></div><div class="perspective"><span>Offene Punkte</span><strong>${issues.length}</strong></div></div>
+      <div class="perspectives"><div class="perspective"><span>Phasen geplant</span><strong>${planned.length} von ${project.phasePlan.filter(row => row.status !== "none").length}</strong></div><div class="perspective"><span>Ressourcenkosten</span><strong>${resourceCost.total ? chf(resourceCost.total, true) : "offen"}</strong></div><div class="perspective"><span>Freigegeben / gebunden</span><strong>${chf(securedCost(project), true)}</strong></div><div class="perspective"><span>Offene Punkte</span><strong>${issues.length}</strong></div></div>
       <div class="finance-project-note ${project.finances.length ? "" : "open"}"><strong>${project.finances.length ? "Finanzplanung erfasst" : "Finanzen noch nicht erfasst"}</strong><span>${project.finances.length ? "Die Jahressicht ist im Bereich Finanzen sichtbar." : "Hinweis: Das blockiert weder Planung noch Freigabe."}</span></div>
       <span class="section-label">Ressourcen dieses Projekts</span>
       <div class="mini-resources">${resources.length ? resources.map(demand => {
