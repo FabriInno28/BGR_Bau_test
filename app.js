@@ -985,7 +985,9 @@ function syncEditors() {
     id: editDemands[index]?.id || uuid("d"),
     name: canonicalResourceName(row.querySelector(".d-name").value),
     phaseKey: row.querySelector(".d-phase").value,
-    remainingPt: row.querySelector(".d-remaining").value
+    remainingPt: row.querySelector(".d-remaining").value,
+    hoursPerPt: row.querySelector(".d-hours")?.value || "8",
+    hourlyRate: row.querySelector(".d-rate")?.value || ""
   }));
   editFinances = $$("[data-finance]").map((row, index) => {
     const thousands = row.querySelector(".pc-amount").value;
@@ -1015,10 +1017,18 @@ function syncEditors() {
 }
 function validateProjectEditors() {
   const errors = [];
+  const planningDepth = $("#f-planning-depth").value || "detail";
+  const detailed = planningDepth === "detail";
   for (const demand of editDemands) {
     const phase = editPhasePlan.find(item => item.phaseKey === demand.phaseKey);
     if (phase?.status === "none") continue;
     errors.push(...validateDemand(demand).map(error => `${demand.name || "Ressource"}: ${error}`));
+    if (!isOfficeUnassigned(demand.name)) {
+      const hoursPerPt = nullableNumberValue(demand.hoursPerPt);
+      const hourlyRate = nullableNumberValue(demand.hourlyRate);
+      if (hoursPerPt == null || hoursPerPt <= 0) errors.push(`${demand.name || "Ressource"}: Stunden pro PT fehlen`);
+      if (detailed && hourlyRate == null) errors.push(`${demand.name || "Ressource"}: Stundensatz fehlt`);
+    }
   }
   const demandKeys = editDemands
     .filter(demand => editPhasePlan.find(item => item.phaseKey === demand.phaseKey)?.status !== "none")
@@ -1026,16 +1036,24 @@ function validateProjectEditors() {
     .filter(key => !key.startsWith(":"));
   if (new Set(demandKeys).size !== demandKeys.length) errors.push("Dieselbe Ressource darf je Projektphase nur einmal erfasst werden");
   for (const finance of editFinances) {
-    errors.push(...validateFinanceEntry(finance).map(error => `Finanzen ${finance.year || ""}: ${error}`));
+    const financeErrors = detailed
+      ? validateFinanceEntry(finance)
+      : [
+          ...(nullableNumberValue(finance.amount) == null ? ["Betrag fehlt oder ist ungültig"] : []),
+          ...(!Number.isInteger(Number(finance.year)) ? ["Jahr ist ungültig"] : [])
+        ];
+    errors.push(...financeErrors.map(error => `Finanzen ${finance.year || ""}: ${error}`));
   }
-  for (const gate of editGateHistory.filter(item => !item.persisted)) {
-    if (!gate.date) errors.push("Phasentor: Datum ist Pflicht");
-    if (gate.status !== "geplant" && !gate.reason) errors.push("Phasentor: Kurzbegründung ist bei einem erfolgten Entscheid Pflicht");
+  if (detailed) {
+    for (const gate of editGateHistory.filter(item => !item.persisted)) {
+      if (!gate.date) errors.push("Phasentor: Datum ist Pflicht");
+      if (gate.status !== "geplant" && !gate.reason) errors.push("Phasentor: Kurzbegründung ist bei einem erfolgten Entscheid Pflicht");
+    }
+    validatePhaseTransitions({ phasePlan: editPhasePlan, gateHistory: editGateHistory, currentPhaseKey: $("#f-phase").value }).forEach(issue => {
+      if (issue.type === "wrongAuthority") errors.push(`Phasentor ${phaseInfo(issue.phaseKey).short}: Entscheid des Gesamtvorstands erforderlich`);
+      else errors.push(`Phasentor ${phaseInfo(issue.phaseKey).short}: Freigabe fehlt`);
+    });
   }
-  validatePhaseTransitions({ phasePlan: editPhasePlan, gateHistory: editGateHistory, currentPhaseKey: $("#f-phase").value }).forEach(issue => {
-    if (issue.type === "wrongAuthority") errors.push(`Phasentor ${phaseInfo(issue.phaseKey).short}: Entscheid des Gesamtvorstands erforderlich`);
-    else errors.push(`Phasentor ${phaseInfo(issue.phaseKey).short}: Freigabe fehlt`);
-  });
   return errors;
 }
 function openProject(id, newProject = false) {
@@ -1053,6 +1071,8 @@ function openProject(id, newProject = false) {
     roles: { gs: "offen", bk: "offen", vs: "nach Bedarf", bhb: "offen" },
     cashflow: [],
     cost: "",
+    planningDepth: "detail",
+    roughFinanceK: "",
     nextDecision: ""
   });
   if (!project) return;
@@ -1063,6 +1083,9 @@ function openProject(id, newProject = false) {
   $("#f-measure").value = project.measure;
   $("#f-kind").value = project.kind;
   renderProjectTypeGuidance();
+  $("#f-planning-depth").value = project.planningDepth || "detail";
+  $("#f-rough-finance").value = project.roughFinanceK ?? "";
+  renderPlanningDepthGuidance();
   $("#f-phase").value = project.currentPhaseKey;
   $("#f-next").value = project.nextDecision || "";
   setRoleSelect("#f-gs", project.roles.gs, "offen");
@@ -1092,6 +1115,21 @@ function setFormTab(name) {
 function renderProjectTypeGuidance() {
   const selected = $("#f-kind").value;
   $$('[data-project-type]').forEach(card => card.classList.toggle("active", card.dataset.projectType === selected));
+}
+function renderPlanningDepthGuidance() {
+  const key = $("#f-planning-depth")?.value || "detail";
+  const info = PLANNING_DEPTHS[key] || PLANNING_DEPTHS.detail;
+  $("#planning-depth-title").textContent = info.label;
+  $("#planning-depth-description").textContent = info.description;
+  $("#f-detail-level").textContent = key === "detail" ? "vollständig" : key === "medium" ? "grob, aber steuerbar" : "strategische Perspektive";
+  $("#rough-finance-field").classList.toggle("hidden", key === "detail");
+  $("#project-dialog").classList.toggle("planning-medium", key === "medium");
+  $("#project-dialog").classList.toggle("planning-light", key === "light");
+  $$("[data-form-tab]").forEach(button => {
+    const relaxed = key !== "detail" && ["resources", "gates"].includes(button.dataset.formTab);
+    button.classList.toggle("relaxed", relaxed);
+    button.title = relaxed ? "In diesem Planungshorizont optional" : "";
+  });
 }
 function renderCapacityYearSummary() {
   const values = $$("[data-capacity-month] .cy-pt").map(input => input.value).filter(value => value !== "");
@@ -1222,6 +1260,10 @@ $("#project-detail").addEventListener("click", event => {
 $("#edit-selected").addEventListener("click", () => openProject(selectedId));
 $("#new-project").addEventListener("click", () => openProject(null, true));
 $("#f-kind").addEventListener("change", renderProjectTypeGuidance);
+$("#f-planning-depth").addEventListener("change", () => {
+  renderPlanningDepthGuidance();
+  renderFinanceEditor();
+});
 $("#f-phase").addEventListener("change", () => {
   syncEditors();
   const selected = $("#f-phase").value;
@@ -1253,7 +1295,7 @@ $$("[data-form-tab]").forEach(button => button.addEventListener("click", () => {
 
 $("#add-demand").addEventListener("click", () => {
   syncEditors();
-  editDemands.push({ id: uuid("d"), name: "", phaseKey: $("#f-phase").value, remainingPt: "" });
+  editDemands.push({ id: uuid("d"), name: "", phaseKey: $("#f-phase").value, remainingPt: "", hoursPerPt: "8", hourlyRate: "" });
   renderDemandEditor();
 });
 $("#demand-editor").addEventListener("click", event => {
@@ -1317,7 +1359,8 @@ $("#project-form").addEventListener("submit", event => {
   const id = $("#project-id").value;
   const existing = projects().find(item => item.id === id);
   const currentPhaseKey = $("#f-phase").value;
-  const phaseErrors = phasePlanIssues({ phasePlan: editPhasePlan, currentPhaseKey });
+  const planningDepth = $("#f-planning-depth").value || "detail";
+  const phaseErrors = planningDepth === "detail" ? phasePlanIssues({ phasePlan: editPhasePlan, currentPhaseKey }) : [];
   const editorErrors = validateProjectEditors();
   if (phaseErrors.length || editorErrors.length) {
     const message = phaseErrors[0] || editorErrors[0];
@@ -1342,6 +1385,8 @@ $("#project-form").addEventListener("submit", event => {
     object: $("#f-object").value.trim(),
     measure: $("#f-measure").value.trim(),
     kind: $("#f-kind").value,
+    planningDepth,
+    roughFinanceK: $("#f-rough-finance").value,
     currentPhaseKey,
     currentAssignee: "",
     nextDecision: $("#f-next").value.trim(),
