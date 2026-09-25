@@ -367,17 +367,20 @@ function phasePlanIssues(project) {
 }
 function projectIssues(project) {
   const issues = [];
+  const detail = project.planningDepth === "detail";
   if (project.uncertain) issues.push("Mutterdaten als unsicher markiert");
   if (project.kind === "Bauprojekt" && (!project.roles?.bk || String(project.roles.bk).toLowerCase() === "offen")) issues.push("Verantwortung Baukommission offen");
-  project.phasePlan.forEach(row => {
-    if (row.status === "none") return;
-    if (row.startQuarter && row.endQuarter) {
-      const phaseDemands = project.demands.filter(demand => demand.phaseKey === row.phaseKey);
-      if (!phaseDemands.length) issues.push(`${phaseInfo(row.phaseKey).short}: Ressourcenbedarf noch nicht erfasst`);
-    }
-  });
-  if (!plannedPhases(project).length) issues.push("Phasenplan offen");
-  if (project.kind === "Bauprojekt" && phaseIndex(project.currentPhaseKey) >= 1 && (!project.roles.bhb || String(project.roles.bhb).toLowerCase() === "offen")) issues.push("Bauherrenbegleitung offen");
+  if (detail) {
+    project.phasePlan.forEach(row => {
+      if (row.status === "none") return;
+      if (row.startQuarter && row.endQuarter) {
+        const phaseDemands = project.demands.filter(demand => demand.phaseKey === row.phaseKey);
+        if (!phaseDemands.length) issues.push(`${phaseInfo(row.phaseKey).short}: Ressourcenbedarf noch nicht erfasst`);
+      }
+    });
+  }
+  if (detail && !plannedPhases(project).length) issues.push("Phasenplan offen");
+  if (project.kind === "Bauprojekt" && detail && phaseIndex(project.currentPhaseKey) >= 1 && (!project.roles.bhb || String(project.roles.bhb).toLowerCase() === "offen")) issues.push("Bauherrenbegleitung offen");
   for (const demand of project.demands) {
     const phase = project.phasePlan.find(row => row.phaseKey === demand.phaseKey);
     if (phase?.status === "none") continue;
@@ -385,30 +388,73 @@ function projectIssues(project) {
     if (item?.past) continue;
     if (isOfficeUnassigned(demand.name)) {
       issues.push(`${phaseInfo(demand.phaseKey).short}: ${demand.remainingPt || "offene"} PT der Geschäftsstelle noch nicht namentlich zugeteilt`);
-      if (nullableNumberValue(demand.remainingPt) == null) issues.push("Geschäftsstelle: Restbedarf noch nicht erfasst");
+      if (detail && nullableNumberValue(demand.remainingPt) == null) issues.push("Geschäftsstelle: Restbedarf noch nicht erfasst");
       continue;
     }
-    if (nullableNumberValue(demand.remainingPt) == null) issues.push(`${demand.name || "Ressource"}: Restbedarf noch nicht erfasst`);
-    else if (!item?.startMonth || !item?.endMonth) issues.push(`${demand.name}: ${phaseInfo(demand.phaseKey).short} zeitlich noch nicht beurteilbar`);
-    else {
+    if (detail && nullableNumberValue(demand.remainingPt) == null) issues.push(`${demand.name || "Ressource"}: Restbedarf noch nicht erfasst`);
+    else if (detail && !item?.startMonth && nullableNumberValue(demand.remainingPt) != null) issues.push(`${demand.name}: ${phaseInfo(demand.phaseKey).short} zeitlich noch nicht beurteilbar`);
+    else if (item?.startMonth) {
       const status = demandStatus(item);
       if (status === "gap") issues.push(`${phaseInfo(demand.phaseKey).short}: ${demand.name} nicht gemeinsam tragbar`);
       if (status === "watch") issues.push(`${phaseInfo(demand.phaseKey).short}: ${demand.name} Kapazität knapp`);
-      if (status === "open") issues.push(`${phaseInfo(demand.phaseKey).short}: ${demand.name} Verfügbarkeit ungeklärt`);
+      if (detail && status === "open") issues.push(`${phaseInfo(demand.phaseKey).short}: ${demand.name} Verfügbarkeit ungeklärt`);
+    }
+    if (detail && nullableNumberValue(demand.remainingPt) != null && !isOfficeUnassigned(demand.name) && nullableNumberValue(demand.hourlyRate) == null) {
+      issues.push(`${demand.name}: Stundensatz für Ressourcenkosten fehlt`);
     }
   }
   project.finances.forEach(finance => {
-    if (validateFinanceEntry(finance).length) issues.push(`Finanzen ${finance.year || "Jahr offen"}: Angaben unvollständig`);
+    const financeErrors = detail
+      ? validateFinanceEntry(finance)
+      : [
+          ...(nullableNumberValue(finance.amount) == null ? ["Betrag fehlt oder ist ungültig"] : []),
+          ...(!Number.isInteger(Number(finance.year)) ? ["Jahr ist ungültig"] : [])
+        ];
+    if (financeErrors.length) issues.push(`Finanzen ${finance.year || "Jahr offen"}: Angaben unvollständig`);
   });
-  validatePhaseTransitions({ phasePlan: project.phasePlan, gateHistory: project.gateHistory, currentPhaseKey: project.currentPhaseKey }).forEach(issue => {
-    if (issue.type === "wrongAuthority") issues.push(`${phaseInfo(issue.phaseKey).short}: Phasentor braucht Entscheid Gesamtvorstand`);
-    else issues.push(`${phaseInfo(issue.phaseKey).short}: Phasentor nicht freigegeben`);
-  });
-  issues.push(...phasePlanIssues(project));
+  if (detail) {
+    validatePhaseTransitions({ phasePlan: project.phasePlan, gateHistory: project.gateHistory, currentPhaseKey: project.currentPhaseKey }).forEach(issue => {
+      if (issue.type === "wrongAuthority") issues.push(`${phaseInfo(issue.phaseKey).short}: Phasentor braucht Entscheid Gesamtvorstand`);
+      else issues.push(`${phaseInfo(issue.phaseKey).short}: Phasentor nicht freigegeben`);
+    });
+    issues.push(...phasePlanIssues(project));
+  }
   return [...new Set(issues)];
 }
 function securedCost(project) {
   return project.finances.filter(item => ["approved", "bound"].includes(item.status)).reduce((sum, item) => sum + num(item.amount), 0);
+}
+const PLANNING_DEPTHS = {
+  detail: { label: "1–3 Jahre · detailliert", short: "1–3 Jahre", description: "Vollständige Planung mit Phasen, Rollen, Ressourcen, Kapazitäten, Finanzen und Phasentoren." },
+  medium: { label: "4–10 Jahre · Grobplanung", short: "4–10 Jahre", description: "Grobe Phasen-, Rollen-, Ressourcen- und Finanzplanung. Details dürfen offen bleiben." },
+  light: { label: "+10 Jahre · Perspektive", short: "+10 Jahre", description: "Strategische Perspektive mit Vorhaben, grobem Horizont, Grössenordnung und nächstem Prüfpunkt." }
+};
+function planningDepthInfo(project) {
+  return PLANNING_DEPTHS[project?.planningDepth] || PLANNING_DEPTHS.detail;
+}
+function demandHours(demand) {
+  const pt = nullableNumberValue(demand?.remainingPt);
+  const hoursPerPt = nullableNumberValue(demand?.hoursPerPt);
+  return pt == null || hoursPerPt == null ? null : pt * hoursPerPt;
+}
+function demandResourceCost(demand) {
+  if (!demand || isOfficeUnassigned(demand.name)) return null;
+  const hours = demandHours(demand);
+  const hourlyRate = nullableNumberValue(demand.hourlyRate);
+  return hours == null || hourlyRate == null ? null : hours * hourlyRate;
+}
+function projectResourceCost(project, demands = project?.demands || []) {
+  return demands.reduce((sum, demand) => {
+    const phase = project?.phasePlan?.find(row => row.phaseKey === demand.phaseKey);
+    if (phase?.status === "none") return sum;
+    return sum + (demandResourceCost(demand) ?? 0);
+  }, 0);
+}
+function projectResourceCostMeta(project, demands = project?.demands || []) {
+  const relevant = demands.filter(demand => project?.phasePlan?.find(row => row.phaseKey === demand.phaseKey)?.status !== "none" && !isOfficeUnassigned(demand.name));
+  const priced = relevant.filter(demand => demandResourceCost(demand) != null);
+  const totalPt = relevant.reduce((sum, demand) => sum + (nullableNumberValue(demand.remainingPt) ?? 0), 0);
+  return { total: projectResourceCost(project, demands), resources: new Set(relevant.map(demand => resourceKey(demand.name))).size, totalPt, priced: priced.length, unpriced: relevant.length - priced.length };
 }
 function changedProject(project) {
   const baseline = BASELINE.find(item => item.id === project.id);
