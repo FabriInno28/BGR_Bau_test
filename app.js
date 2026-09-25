@@ -817,9 +817,6 @@ function roleOptions(selected = "", placeholder = "Verantwortung wählen") {
   const legacy = value && !ROLE_OPTIONS.includes(value) ? `<option value="${esc(value)}" selected>${esc(value)} · bestehender Wert</option>` : "";
   return `<option value="">${placeholder}</option>${legacy}${options(ROLE_OPTIONS, value)}`;
 }
-function phaseAssignee(project, phaseKey = project.currentPhaseKey) {
-  return project.phasePlan.find(row => row.phaseKey === phaseKey)?.assignee || "";
-}
 function capacityResourceOptions(selected = "") {
   const value = canonicalResourceName(selected);
   return `<option value="">Ressource wählen</option>${options(CAPACITY_RESOURCES, value)}`;
@@ -834,31 +831,36 @@ function setRoleSelect(selector, value, emptyLabel) {
   $(selector).innerHTML = roleOptions(isEmpty ? "" : normalized, emptyLabel);
 }
 function renderPhasePlanEditor() {
-  $("#phase-plan-editor").innerHTML = editPhasePlan.map((row, index) => `<div class="phase-plan-row ${phaseInfo(row.phaseKey).className}" data-phase-plan="${index}"><div><i></i><strong>${phaseInfo(row.phaseKey).label}</strong><span>${index === 1 ? "Danach Entscheid Gesamtvorstand" : index === 3 ? "Danach Projektfreigabe Gesamtvorstand" : "Entscheid im Kompetenzrahmen"}</span></div><label><span>Status</span><select class="pp-status">${phaseStatusOptions(row.status)}</select></label><label><span>Verantwortung</span><select class="pp-assignee">${roleOptions(row.assignee)}</select></label><label><span>Ressourcenklärung</span><select class="pp-resource"><option value="open" ${row.resourceClarification !== "none" ? "selected" : ""}>noch offen</option><option value="none" ${row.resourceClarification === "none" ? "selected" : ""}>kein zusätzlicher Bedarf</option></select></label><label><span>Start</span><select class="pp-start">${quarterOptions(row.startQuarter)}</select></label><label><span>Ende</span><select class="pp-end">${quarterOptions(row.endQuarter)}</select></label></div>`).join("");
-  renderCurrentAssigneeSummary();
+  $("#phase-plan-editor").innerHTML = editPhasePlan.map((row, index) => {
+    const noActivity = row.status === "none";
+    return `<div class="phase-plan-row ${phaseInfo(row.phaseKey).className} ${noActivity ? "no-activity" : ""}" data-phase-plan="${index}"><div><i></i><strong>${phaseInfo(row.phaseKey).label}</strong><span>${noActivity ? "Für die BGR ist in dieser Phase keine Tätigkeit vorgesehen." : index === 1 ? "Danach Entscheid Gesamtvorstand" : index === 3 ? "Danach Projektfreigabe Gesamtvorstand" : "Entscheid im Kompetenzrahmen"}</span></div><label><span>Status</span><select class="pp-status">${phaseStatusOptions(row.status)}</select></label>${noActivity ? '<div class="no-activity-note"><strong>Keine Tätigkeit</strong><span>Die Phase bleibt sichtbar. Zeitraum und Ressourcen sind hier nicht erforderlich.</span></div>' : `<label><span>Start</span><select class="pp-start">${quarterOptions(row.startQuarter)}</select></label><label><span>Ende</span><select class="pp-end">${quarterOptions(row.endQuarter)}</select></label>`}</div>`;
+  }).join("");
 }
-function renderCurrentAssigneeSummary() {
-  const summary = $("#f-current-assignee-summary");
+function renderBKSummary() {
+  const summary = $("#f-bk-summary");
   if (!summary) return;
-  const currentPhaseKey = $("#f-phase").value;
-  const assignee = editPhasePlan.find(row => row.phaseKey === currentPhaseKey)?.assignee || "";
-  summary.textContent = assignee || "noch offen";
-  summary.classList.toggle("open", !assignee);
+  const value = canonicalResourceName($("#f-bk")?.value || "");
+  summary.textContent = value || "noch offen";
+  summary.classList.toggle("open", !value);
 }
 function renderDemandEditor() {
   $("#demand-editor").innerHTML = editDemands.length ? editDemands.map((demand, index) => {
     const phase = editPhasePlan.find(item => item.phaseKey === demand.phaseKey);
-    const window = phaseMonthWindow(phase, CURRENT_MONTH);
-    const statusText = window.startMonth ? `${monthLabel(window.startMonth)} bis ${monthLabel(window.endMonth)}` : "Phasenzeitraum noch offen";
-    return `<div class="demand-card" data-demand="${index}">
+    const noActivity = phase?.status === "none";
+    const window = noActivity ? {} : phaseMonthWindow(phase, CURRENT_MONTH);
+    const statusText = noActivity ? "Phase: Keine Tätigkeit" : window.startMonth ? `${monthLabel(window.startMonth)} bis ${monthLabel(window.endMonth)}` : "Phasenzeitraum noch offen";
+    return `<div class="demand-card ${noActivity ? "no-activity-demand" : ""}" data-demand="${index}">
       <div class="demand-summary simple"><label><span>Projektphase</span><select class="d-phase">${phaseOptions(demand.phaseKey)}</select></label><label><span>Person oder Firma</span><select class="d-name">${demandResourceOptions(demand.name)}</select></label><label><span>Noch benötigte PT</span><input class="d-remaining" type="number" min="0.5" step=".5" value="${esc(demand.remainingPt)}" placeholder="z. B. 18"></label><button type="button" class="remove" data-remove-demand="${index}" aria-label="Ressourcenbedarf löschen">×</button></div>
-      <div class="planning-state"><strong>${esc(statusText)}</strong><span>${isOfficeUnassigned(demand.name) ? "Offener Aufwand der Geschäftsstelle: noch keiner Person zugeteilt. Keine zusätzliche Kapazität und keine Freigabe, bis zugeteilt." : "Dieser eine Wert gilt für die ganze Phase. Das BauRadar verteilt ihn nicht auf Monate."}</span>${demand.migrationNote ? `<small>${esc(demand.migrationNote)}</small>` : ""}</div>
-      ${isOfficeUnassigned(demand.name) ? `<div class="office-assign"><div><strong>Personentage zuordnen</strong><small>Die gewählten PT werden hier abgezogen und bei der Person in derselben Phase hinzugefügt – kein doppelter Bedarf.</small></div><label><span>Person</span><select class="d-assign-person">${options(OFFICE_PEOPLE, "", "Person wählen")}</select></label><label><span>PT</span><input class="d-assign-pt" type="number" min="0.5" step=".5" max="${esc(demand.remainingPt)}" placeholder="z. B. 4"></label><button type="button" class="button primary" data-allocate-office="${index}">PT zuteilen</button></div>` : ""}
+      <div class="planning-state"><strong>${esc(statusText)}</strong><span>${noActivity ? "Dieser Bedarf wird nicht in die Kapazitätsprüfung einbezogen, solange die Phase auf «Keine Tätigkeit» steht." : isOfficeUnassigned(demand.name) ? "Offener Aufwand der Geschäftsstelle: noch keiner Person zugeteilt. Keine zusätzliche Kapazität und keine Freigabe, bis zugeteilt." : "Dieser eine Wert gilt für die ganze Phase. Das BauRadar verteilt ihn nicht auf Monate."}</span>${demand.migrationNote ? `<small>${esc(demand.migrationNote)}</small>` : ""}</div>
+      ${!noActivity && isOfficeUnassigned(demand.name) ? `<div class="office-assign"><div><strong>Personentage zuordnen</strong><small>Die gewählten PT werden hier abgezogen und bei der Person in derselben Phase hinzugefügt – kein doppelter Bedarf.</small></div><label><span>Person</span><select class="d-assign-person">${options(OFFICE_PEOPLE, "", "Person wählen")}</select></label><label><span>PT</span><input class="d-assign-pt" type="number" min="0.5" step=".5" max="${esc(demand.remainingPt)}" placeholder="z. B. 4"></label><button type="button" class="button primary" data-allocate-office="${index}">PT zuteilen</button></div>` : ""}
     </div>`;
   }).join("") : '<div class="empty-note">Noch kein Ressourcenbedarf eingetragen.</div>';
 }
 function renderFinanceEditor() {
-  $("#finance-editor").innerHTML = editFinances.length ? editFinances.map((item, index) => `<div class="edit-row cost" data-finance="${index}"><label><span>Jahr</span><select class="pc-year">${YEARS.map(year => `<option ${Number(item.year) === year ? "selected" : ""}>${year}</option>`).join("")}</select></label><label><span>Betrag CHF</span><input class="pc-amount" type="number" min="1" step="1000" value="${esc(item.amount)}"></label><label><span>Qualität</span><select class="pc-status">${COST_STATUSES.map(status => `<option value="${status.key}" ${item.status === status.key ? "selected" : ""}>${status.label}</option>`).join("")}</select></label><label><span>Quelle</span><input class="pc-source" value="${esc(item.source || "")}" placeholder="z. B. BGR Schätzung, Budget, Offerte"></label><label><span>Informationsdatum</span><input class="pc-date" type="date" value="${esc(item.informationDate || "")}"></label><button type="button" class="remove" data-remove-finance="${index}">×</button></div>`).join("") : '<div class="empty-note">Noch keine Finanzen erfasst. Das ist zulässig und blockiert keine Freigabe.</div>';
+  $("#finance-editor").innerHTML = editFinances.length ? editFinances.map((item, index) => {
+    const thousands = nullableNumberValue(item.amount) == null ? "" : num(item.amount) / 1000;
+    return `<div class="edit-row cost" data-finance="${index}"><label><span>Jahr</span><select class="pc-year">${YEARS.map(year => `<option ${Number(item.year) === year ? "selected" : ""}>${year}</option>`).join("")}</select></label><label><span>Betrag in Tsd. CHF</span><input class="pc-amount" type="number" min="1" step="1" value="${esc(thousands)}" placeholder="50 = CHF 50’000"></label><label><span>Qualität</span><select class="pc-status">${COST_STATUSES.map(status => `<option value="${status.key}" ${item.status === status.key ? "selected" : ""}>${status.label}</option>`).join("")}</select></label><label><span>Quelle</span><input class="pc-source" value="${esc(item.source || "")}" placeholder="z. B. BGR Schätzung, Budget, Offerte"></label><label><span>Informationsdatum</span><input class="pc-date" type="date" value="${esc(item.informationDate || "")}"></label><button type="button" class="remove" data-remove-finance="${index}">×</button></div>`;
+  }).join("") : '<div class="empty-note">Noch keine Finanzen erfasst. Das ist zulässig und blockiert keine Freigabe.</div>';
 }
 function renderGateEditor() {
   $("#gate-editor").innerHTML = editGateHistory.length ? editGateHistory.map((gate, index) => {
@@ -867,14 +869,15 @@ function renderGateEditor() {
   }).join("") : '<div class="empty-note">Noch kein Phasentorentscheid protokolliert.</div>';
 }
 function syncEditors() {
-  editPhasePlan = $$("[data-phase-plan]").map((row, index) => ({
-    ...editPhasePlan[index],
-    status: row.querySelector(".pp-status").value,
-    assignee: row.querySelector(".pp-assignee").value,
-    resourceClarification: row.querySelector(".pp-resource").value,
-    startQuarter: row.querySelector(".pp-start").value,
-    endQuarter: row.querySelector(".pp-end").value
-  }));
+  editPhasePlan = $$("[data-phase-plan]").map((row, index) => {
+    const status = row.querySelector(".pp-status").value;
+    return {
+      ...editPhasePlan[index],
+      status,
+      startQuarter: status === "none" ? "" : (row.querySelector(".pp-start")?.value || ""),
+      endQuarter: status === "none" ? "" : (row.querySelector(".pp-end")?.value || "")
+    };
+  });
   editDemands = $$("[data-demand]").map((row, index) => ({
     ...editDemands[index],
     id: editDemands[index]?.id || uuid("d"),
@@ -882,14 +885,17 @@ function syncEditors() {
     phaseKey: row.querySelector(".d-phase").value,
     remainingPt: row.querySelector(".d-remaining").value
   }));
-  editFinances = $$("[data-finance]").map((row, index) => ({
-    id: editFinances[index]?.id || uuid("finance"),
-    year: Number(row.querySelector(".pc-year").value),
-    amount: row.querySelector(".pc-amount").value,
-    status: row.querySelector(".pc-status").value,
-    source: row.querySelector(".pc-source").value.trim(),
-    informationDate: row.querySelector(".pc-date").value
-  }));
+  editFinances = $$("[data-finance]").map((row, index) => {
+    const thousands = row.querySelector(".pc-amount").value;
+    return {
+      id: editFinances[index]?.id || uuid("finance"),
+      year: Number(row.querySelector(".pc-year").value),
+      amount: thousands === "" ? "" : String(numberValue(thousands) * 1000),
+      status: row.querySelector(".pc-status").value,
+      source: row.querySelector(".pc-source").value.trim(),
+      informationDate: row.querySelector(".pc-date").value
+    };
+  });
   editGateHistory = $$("[data-gate]").map((row, index) => {
     if (editGateHistory[index]?.persisted) return editGateHistory[index];
     return {
@@ -907,22 +913,22 @@ function syncEditors() {
 }
 function validateProjectEditors() {
   const errors = [];
-  for (const phase of editPhasePlan) {
-    if (!phase.startQuarter || !phase.endQuarter) continue;
-    if (!phase.assignee) errors.push(`${phaseInfo(phase.phaseKey).short}: Verantwortung fehlt`);
-    const demands = editDemands.filter(demand => demand.phaseKey === phase.phaseKey);
-    if (!demands.length && phase.resourceClarification !== "none") errors.push(`${phaseInfo(phase.phaseKey).short}: Ressourcenbedarf noch nicht geklärt`);
-  }
   for (const demand of editDemands) {
+    const phase = editPhasePlan.find(item => item.phaseKey === demand.phaseKey);
+    if (phase?.status === "none") continue;
     errors.push(...validateDemand(demand).map(error => `${demand.name || "Ressource"}: ${error}`));
   }
-  const demandKeys = editDemands.map(demand => `${resourceKey(demand.name)}:${demand.phaseKey}`).filter(key => !key.startsWith(":"));
+  const demandKeys = editDemands
+    .filter(demand => editPhasePlan.find(item => item.phaseKey === demand.phaseKey)?.status !== "none")
+    .map(demand => `${resourceKey(demand.name)}:${demand.phaseKey}`)
+    .filter(key => !key.startsWith(":"));
   if (new Set(demandKeys).size !== demandKeys.length) errors.push("Dieselbe Ressource darf je Projektphase nur einmal erfasst werden");
   for (const finance of editFinances) {
     errors.push(...validateFinanceEntry(finance).map(error => `Finanzen ${finance.year || ""}: ${error}`));
   }
   for (const gate of editGateHistory.filter(item => !item.persisted)) {
-    if (!gate.date || !gate.reason) errors.push("Phasentor: Datum und Kurzbegründung sind Pflicht");
+    if (!gate.date) errors.push("Phasentor: Datum ist Pflicht");
+    if (gate.status !== "geplant" && !gate.reason) errors.push("Phasentor: Kurzbegründung ist bei einem erfolgten Entscheid Pflicht");
   }
   validatePhaseTransitions({ phasePlan: editPhasePlan, gateHistory: editGateHistory, currentPhaseKey: $("#f-phase").value }).forEach(issue => {
     if (issue.type === "wrongAuthority") errors.push(`Phasentor ${phaseInfo(issue.phaseKey).short}: Entscheid des Gesamtvorstands erforderlich`);
@@ -942,7 +948,7 @@ function openProject(id, newProject = false) {
     currentPhaseKey: "anlass",
     currentAssignee: "",
     motherQuarter: START_QUARTER,
-    roles: { gs: "offen", bk: "offen", vs: "nach Bedarf", bhb: "offen", control: "offen", deputy: "offen" },
+    roles: { gs: "offen", bk: "offen", vs: "nach Bedarf", bhb: "offen" },
     cashflow: [],
     cost: "",
     nextDecision: ""
@@ -961,8 +967,7 @@ function openProject(id, newProject = false) {
   setRoleSelect("#f-bk", project.roles.bk, "offen");
   setRoleSelect("#f-vs", project.roles.vs, "nach Bedarf");
   setRoleSelect("#f-bhb", project.roles.bhb, "offen");
-  setRoleSelect("#f-control", project.roles.control, "offen");
-  setRoleSelect("#f-deputy", project.roles.deputy, "offen");
+  renderBKSummary();
   editPhasePlan = clone(project.phasePlan);
   editDemands = clone(project.demands);
   editFinances = clone(project.finances || []);
@@ -971,7 +976,6 @@ function openProject(id, newProject = false) {
     ? `<strong>Referenz ImmoTool / Excel: ${chf(rawMotherCost(project))}</strong><span>Dieser Referenzwert wird nie automatisch mit der Finanzplanung im BauRadar summiert.</span>`
     : "<strong>Kein Referenzwert</strong><span>Finanzen können projektweit pro Jahr erfasst werden. Fehlende Finanzen blockieren keine Freigabe.</span>";
   renderPhasePlanEditor();
-  renderCurrentAssigneeSummary();
   renderDemandEditor();
   renderFinanceEditor();
   renderGateEditor();
@@ -1022,7 +1026,14 @@ function csv(name, rows) {
 
 $("#phase-filter").innerHTML += PHASES.map(phase => `<option value="${phase.key}">${phase.label}</option>`).join("");
 $("#f-phase").innerHTML = PHASES.map(phase => `<option value="${phase.key}">${phase.label}</option>`).join("");
-[$("#search"), $("#kind-filter"), $("#phase-filter"), $("#only-pressure")].forEach(element => element.addEventListener("input", renderTimeline));
+function updatePhaseFilterColor() {
+  const value = $("#phase-filter").value;
+  const phase = PHASES.find(item => item.key === value);
+  $("#phase-filter-dot").className = `phase-filter-dot ${phase?.className || "all"}`;
+}
+[$("#search"), $("#kind-filter"), $("#only-pressure")].forEach(element => element.addEventListener("input", renderTimeline));
+$("#phase-filter").addEventListener("input", () => { updatePhaseFilterColor(); renderTimeline(); });
+updatePhaseFilterColor();
 
 $("#workspace-select").addEventListener("change", event => {
   snapshot("Arbeitsstand gewechselt");
@@ -1118,12 +1129,18 @@ $("#f-phase").addEventListener("change", () => {
   }));
   renderPhasePlanEditor();
 });
+$("#f-bk").addEventListener("change", renderBKSummary);
 $("#phase-plan-editor").addEventListener("change", event => {
-  const select = event.target.closest(".pp-assignee");
-  const row = select?.closest("[data-phase-plan]");
-  if (!select || !row) return;
-  editPhasePlan[Number(row.dataset.phasePlan)].assignee = select.value;
-  renderCurrentAssigneeSummary();
+  if (!event.target.closest(".pp-status")) return;
+  syncEditors();
+  const row = event.target.closest("[data-phase-plan]");
+  const index = Number(row?.dataset.phasePlan);
+  if (!Number.isFinite(index)) return;
+  if (editPhasePlan[index].status === "none" && editPhasePlan[index].phaseKey === $("#f-phase").value) {
+    editPhasePlan[index].status = "current";
+    toast("Die aktuelle Projektphase kann nicht «Keine Tätigkeit» sein.");
+  }
+  renderPhasePlanEditor();
 });
 $("#expand-long").addEventListener("click", () => { longOpen = !longOpen; renderLongHorizon(); });
 $$("[data-form-tab]").forEach(button => button.addEventListener("click", () => {
@@ -1180,7 +1197,7 @@ $("#finance-editor").addEventListener("click", event => {
 });
 $("#add-gate").addEventListener("click", () => {
   syncEditors();
-  editGateHistory.push({ id: uuid("gate"), phaseKey: $("#f-phase").value, status: "freigegeben", authority: "BK", date: "", reason: "", conditions: "", nextPhase: "" });
+  editGateHistory.push({ id: uuid("gate"), phaseKey: $("#f-phase").value, status: "geplant", authority: "BK", date: "", reason: "", conditions: "", nextPhase: "" });
   renderGateEditor();
 });
 $("#gate-editor").addEventListener("click", event => {
@@ -1215,12 +1232,6 @@ $("#project-form").addEventListener("submit", event => {
     setFormTab(targetTab);
     return;
   }
-  const currentAssignee = editPhasePlan.find(row => row.phaseKey === currentPhaseKey)?.assignee || "";
-  if (!currentAssignee) {
-    toast(`Verantwortung ${phaseInfo(currentPhaseKey).short} fehlt`);
-    setFormTab("phases");
-    return;
-  }
   const newGates = editGateHistory.filter(gate => !gate.persisted).map(({ persisted, ...gate }) => gate);
   const oldGates = editGateHistory.filter(gate => gate.persisted).map(({ persisted, ...gate }) => gate);
   const project = normalizeProject({
@@ -1230,15 +1241,13 @@ $("#project-form").addEventListener("submit", event => {
     measure: $("#f-measure").value.trim(),
     kind: $("#f-kind").value,
     currentPhaseKey,
-    currentAssignee,
+    currentAssignee: "",
     nextDecision: $("#f-next").value.trim(),
     roles: {
       gs: $("#f-gs").value || "offen",
       bk: $("#f-bk").value || "offen",
       vs: $("#f-vs").value || "nach Bedarf",
-      bhb: $("#f-bhb").value || "offen",
-      control: $("#f-control").value || "offen",
-      deputy: $("#f-deputy").value || "offen"
+      bhb: $("#f-bhb").value || "offen"
     },
     phasePlan: editPhasePlan,
     demands: editDemands,
@@ -1274,6 +1283,13 @@ $("#capacity-list").addEventListener("click", event => {
   if (row) openCapacity(row.dataset.editCapacity);
 });
 $("#resource-focus").addEventListener("change", renderResources);
+$("#resource-overview-controls").addEventListener("click", event => {
+  const button = event.target.closest("[data-resource-overview]");
+  if (!button) return;
+  resourceOverviewMode = button.dataset.resourceOverview;
+  renderResourceOverview();
+});
+$("#resource-action-only").addEventListener("change", renderResourceOverview);
 [$("#resource-chart"), $("#resource-matrix"), $("#office-open-work")].forEach(element => element.addEventListener("click", event => {
   const target = event.target.closest("[data-edit-project]");
   if (target) openProject(target.dataset.editProject);
@@ -1381,8 +1397,8 @@ $("#import-backup").addEventListener("change", async event => {
 });
 
 $("#export-projects").addEventListener("click", () => csv("BGR_BauRadar_Projekte_und_Phasen.csv", [
-  ["Arbeitsstand", "Projekt ID", "Objekt", "Projektart", "Mutterstand", "Arbeitsstand Phase", "Verantwortung aktuelle Phase", "Projektphase", "Verantwortung Projektphase", "Status", "Start", "Ende"],
-  ...projects().flatMap(project => project.phasePlan.map(row => [state.mode === "scenario" ? activeWorkspace().name : "Scharfer Stand", project.id, project.object, project.kind, phaseInfo(project.motherPhaseKey).label, phaseInfo(project.currentPhaseKey).label, phaseAssignee(project), phaseInfo(row.phaseKey).label, row.assignee, PHASE_STATUS[row.status] || row.status, row.startQuarter, row.endQuarter]))
+  ["Arbeitsstand", "Projekt ID", "Objekt", "Projektart", "Mutterstand", "Aktueller Stand", "Verantwortung Baukommission", "Projektphase", "Status", "Start", "Ende"],
+  ...projects().flatMap(project => project.phasePlan.map(row => [state.mode === "scenario" ? activeWorkspace().name : "Scharfer Stand", project.id, project.object, project.kind, phaseInfo(project.motherPhaseKey).label, phaseInfo(project.currentPhaseKey).label, project.roles?.bk || "", phaseInfo(row.phaseKey).label, PHASE_STATUS[row.status] || row.status, row.startQuarter, row.endQuarter]))
 ]));
 $("#export-resources").addEventListener("click", () => csv("BGR_BauRadar_Ressourcenbedarf.csv", [
   ["Arbeitsstand", "Projekt ID", "Objekt", "Projektphase", "Phasenbeginn", "Phasenende", "Person oder Firma", "Noch benötigte PT", "Beurteilung", "Kritischer Zeitraum", "Gemeinsamer Bedarf PT", "Verfügbarkeit PT", "Fehlende PT"],
