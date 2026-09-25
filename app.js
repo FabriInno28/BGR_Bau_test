@@ -27,11 +27,11 @@ import {
 
 const PHASES = [
   { key: "anlass", label: "Anlass / Prüfauftrag", short: "Anlass", className: "p1" },
-  { key: "machbarkeit", label: "Machbarkeitsstudie", short: "MBS", className: "p2" },
-  { key: "planerwahl", label: "Planerauswahl", short: "Planer", className: "p3" },
+  { key: "machbarkeit", label: "Machbarkeitsstudie", short: "Machbarkeit", className: "p2" },
+  { key: "planerwahl", label: "Planerwahl", short: "Planerwahl", className: "p3" },
   { key: "planung", label: "Planung / Projektierung", short: "Planung", className: "p4" },
   { key: "vergabe", label: "Ausschreibung / Vergabe", short: "Vergabe", className: "p5" },
-  { key: "realisierung", label: "Realisierung", short: "Bau", className: "p6" },
+  { key: "realisierung", label: "Realisierung", short: "Realisierung", className: "p6" },
   { key: "abschluss", label: "Abschluss / Übergabe", short: "Abschluss", className: "p7" }
 ];
 
@@ -42,7 +42,7 @@ const COST_STATUSES = [
   { key: "bound", label: "vertraglich gebunden", className: "bound" }
 ];
 
-const GATE_STATUSES = ["freigegeben", "mit Auflagen", "zurückgestellt", "gestoppt"];
+const GATE_STATUSES = ["geplant", "freigegeben", "mit Auflagen", "zurückgestellt", "gestoppt"];
 const GATE_AUTHORITIES = ["BK", "BHB", "Gesamtvorstand", "Geschäftsstelle"];
 const MONTH_NAMES = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"];
 const TODAY = new Date();
@@ -68,13 +68,15 @@ const PHASE_STATUS = {
   open: "Offen",
   planned: "Geplant",
   current: "Aktuell",
-  done: "Abgeschlossen"
+  done: "Abgeschlossen",
+  none: "Keine Tätigkeit"
 };
-const STORE_KEY = "bgr-bauradar-v7";
-const PREVIOUS_STORE_KEY = "bgr-bauradar-v5";
-const OLDER_STORE_KEY = "bgr-bauradar-v4";
-const LEGACY_STORE_KEY = "bgr-portfolio-cockpit-v3";
-const HISTORY_KEY = "bgr-bauradar-v7-history";
+const STORE_KEY = "bgr-bauradar-v8";
+const PREVIOUS_STORE_KEY = "bgr-bauradar-v7";
+const OLDER_STORE_KEY = "bgr-bauradar-v5";
+const LEGACY_STORE_KEY = "bgr-bauradar-v4";
+const OLDEST_STORE_KEY = "bgr-portfolio-cockpit-v3";
+const HISTORY_KEY = "bgr-bauradar-v8-history";
 
 const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
@@ -135,23 +137,19 @@ function inferKind(project) {
 }
 function inferRoles(project) {
   return {
-    gs: project.currentOwner === "Geschäftsstelle" ? "Geschäftsstelle" : "offen",
-    bk: project.bgrResponsibility === "Baukommission" ? (project.currentOwner || "Baukommission") : "offen",
-    vs: "nach Bedarf",
-    bhb: ["Büro 8", "Tresto", "TRESTO", "andere externe Partner"].includes(project.projectManagement) ? project.projectManagement : "offen",
-    control: project.control || "offen",
-    deputy: project.deputy || "offen"
+    gs: canonicalResourceName(project.roles?.gs || (project.currentOwner === "Geschäftsstelle" ? "Geschäftsstelle" : "")) || "offen",
+    bk: canonicalResourceName(project.roles?.bk || (project.bgrResponsibility === "Baukommission" ? (project.currentOwner || "BK") : "")) || "offen",
+    vs: canonicalResourceName(project.roles?.vs || "") || "nach Bedarf",
+    bhb: canonicalResourceName(project.roles?.bhb || (["Büro 8", "Tresto", "TRESTO", "andere externe Partner"].includes(project.projectManagement) ? project.projectManagement : "")) || "offen"
   };
 }
-function defaultPhasePlan(currentKey, currentAssignee = "") {
+function defaultPhasePlan(currentKey) {
   const current = phaseIndex(currentKey);
   return PHASES.map((phase, index) => ({
     phaseKey: phase.key,
     status: index < current ? "done" : index === current ? "current" : "open",
     startQuarter: "",
-    endQuarter: "",
-    assignee: phase.key === currentKey && ROLE_OPTIONS.includes(currentAssignee) ? currentAssignee : "",
-    resourceClarification: "open"
+    endQuarter: ""
   }));
 }
 function rawMotherCost(project) {
@@ -161,19 +159,21 @@ function rawMotherCost(project) {
 function normalizeProject(project) {
   const motherPhaseKey = project.motherPhaseKey || phaseFromLegacy(project.phase);
   const currentPhaseKey = project.currentPhaseKey || project.phaseKey || motherPhaseKey;
-  const inferredAssignee = canonicalResourceName(project.currentAssignee || project.currentOwner || project.bgrResponsibility || "");
   const migrated = migrateState({ projects: [project] }).projects[0];
-  const migratedPhasePlan = migratePhaseResponsibilities({
-    ...project,
-    phasePlan: migrated.phasePlan,
-    currentPhaseKey,
-    currentAssignee: inferredAssignee
+  const fallback = defaultPhasePlan(currentPhaseKey);
+  const sourceRows = migrated.phasePlan?.length ? migrated.phasePlan : fallback;
+  const phasePlan = PHASES.map((phase, index) => {
+    const source = sourceRows.find(row => row.phaseKey === phase.key) || fallback[index];
+    let status = ["open", "planned", "current", "done", "none"].includes(source?.status) ? source.status : fallback[index].status;
+    if (phase.key === currentPhaseKey && status === "none") status = "current";
+    return {
+      phaseKey: phase.key,
+      status,
+      startQuarter: status === "none" ? "" : (source?.startQuarter || ""),
+      endQuarter: status === "none" ? "" : (source?.endQuarter || "")
+    };
   });
-  const phasePlan = (migratedPhasePlan.length === PHASES.length
-    ? migratedPhasePlan
-    : defaultPhasePlan(currentPhaseKey, inferredAssignee))
-    .map(row => ({ ...row, resourceClarification: row.resourceClarification === "none" ? "none" : "open" }));
-  const currentAssignee = phasePlan.find(row => row.phaseKey === currentPhaseKey)?.assignee || "";
+  const roles = inferRoles({ ...project, roles: project.roles || migrated.roles });
   return {
     ...clone(project),
     ...migrated,
@@ -184,15 +184,14 @@ function normalizeProject(project) {
         : inferKind(project),
     motherPhaseKey,
     currentPhaseKey,
-    currentAssignee,
+    currentAssignee: "",
     motherQuarter: project.motherQuarter || BASELINE_QUARTER,
-    roles: project.roles || inferRoles(project),
+    roles,
     phasePlan,
     finances: Array.isArray(migrated.finances) ? migrated.finances : [],
     gateHistory: Array.isArray(project.gateHistory) ? project.gateHistory : []
   };
 }
-
 const BASELINE = BASELINE_PROJECTS.map(normalizeProject);
 
 function emptyState() {
@@ -239,7 +238,7 @@ function reconcileBaselineProjects(savedProjects, deletedIds = []) {
 }
 function loadState() {
   try {
-    const raw = localStorage.getItem(STORE_KEY) || localStorage.getItem(PREVIOUS_STORE_KEY) || localStorage.getItem(OLDER_STORE_KEY) || localStorage.getItem(LEGACY_STORE_KEY);
+    const raw = localStorage.getItem(STORE_KEY) || localStorage.getItem(PREVIOUS_STORE_KEY) || localStorage.getItem(OLDER_STORE_KEY) || localStorage.getItem(LEGACY_STORE_KEY) || localStorage.getItem(OLDEST_STORE_KEY);
     if (!raw) return emptyState();
     const parsed = JSON.parse(raw);
     const migrated = migrateState(parsed, BASELINE);
@@ -337,14 +336,15 @@ let editGateHistory = [];
 
 function projects() { return activeWorkspace().projects; }
 function capacities() { return activeWorkspace().capacities; }
-function plannedPhases(project) { return project.phasePlan.filter(row => row.startQuarter && row.endQuarter); }
+function plannedPhases(project) { return project.phasePlan.filter(row => row.status !== "none" && row.startQuarter && row.endQuarter); }
 function plansAt(project, quarter) {
-  return project.phasePlan.filter(row => row.startQuarter && row.endQuarter && qIndex(quarter) >= qIndex(row.startQuarter) && qIndex(quarter) <= qIndex(row.endQuarter));
+  return project.phasePlan.filter(row => row.status !== "none" && row.startQuarter && row.endQuarter && qIndex(quarter) >= qIndex(row.startQuarter) && qIndex(quarter) <= qIndex(row.endQuarter));
 }
 function phasePlanIssues(project) {
   const issues = [];
   let previousEnd = null;
   project.phasePlan.forEach(row => {
+    if (row.status === "none") return;
     if (Boolean(row.startQuarter) !== Boolean(row.endQuarter)) issues.push(`${phaseInfo(row.phaseKey).short}: Start oder Ende fehlt`);
     if (row.startQuarter && row.endQuarter && qIndex(row.endQuarter) < qIndex(row.startQuarter)) issues.push(`${phaseInfo(row.phaseKey).short}: Ende vor Start`);
     if (previousEnd != null && row.startQuarter && qIndex(row.startQuarter) < previousEnd) issues.push(`${phaseInfo(row.phaseKey).short}: überschneidet vorherige Phase`);
@@ -354,24 +354,27 @@ function phasePlanIssues(project) {
     const currentRows = project.phasePlan.filter(row => row.status === "current");
     const selected = project.phasePlan.find(row => row.phaseKey === project.currentPhaseKey);
     if (currentRows.length > 1) issues.push("Mehr als eine Phase ist als aktuell markiert");
-    if (selected && selected.status !== "current") issues.push(`${phaseInfo(project.currentPhaseKey).short}: aktuelle Phase muss Status «Aktuell» haben`);
+    if (selected?.status === "none") issues.push(`${phaseInfo(project.currentPhaseKey).short}: aktuelle Phase kann nicht «Keine Tätigkeit» sein`);
+    else if (selected && selected.status !== "current") issues.push(`${phaseInfo(project.currentPhaseKey).short}: aktuelle Phase muss Status «Aktuell» haben`);
   }
   return issues;
 }
 function projectIssues(project) {
   const issues = [];
   if (project.uncertain) issues.push("Mutterdaten als unsicher markiert");
+  if (project.kind === "Bauprojekt" && (!project.roles?.bk || String(project.roles.bk).toLowerCase() === "offen")) issues.push("Verantwortung Baukommission offen");
   project.phasePlan.forEach(row => {
-    const responsibilityRelevant = row.phaseKey === project.currentPhaseKey || Boolean(row.startQuarter || row.endQuarter);
-    if (responsibilityRelevant && !row.assignee) issues.push(`${phaseInfo(row.phaseKey).short}: Verantwortung offen`);
+    if (row.status === "none") return;
     if (row.startQuarter && row.endQuarter) {
       const phaseDemands = project.demands.filter(demand => demand.phaseKey === row.phaseKey);
-      if (!phaseDemands.length && row.resourceClarification !== "none") issues.push(`${phaseInfo(row.phaseKey).short}: Ressourcenbedarf noch nicht geklärt`);
+      if (!phaseDemands.length) issues.push(`${phaseInfo(row.phaseKey).short}: Ressourcenbedarf noch nicht erfasst`);
     }
   });
   if (!plannedPhases(project).length) issues.push("Phasenplan offen");
-  if (project.kind === "Bauprojekt" && phaseIndex(project.currentPhaseKey) >= 1 && (!project.roles.bhb || project.roles.bhb.toLowerCase() === "offen")) issues.push("Bauherrenbegleitung offen");
+  if (project.kind === "Bauprojekt" && phaseIndex(project.currentPhaseKey) >= 1 && (!project.roles.bhb || String(project.roles.bhb).toLowerCase() === "offen")) issues.push("Bauherrenbegleitung offen");
   for (const demand of project.demands) {
+    const phase = project.phasePlan.find(row => row.phaseKey === demand.phaseKey);
+    if (phase?.status === "none") continue;
     const item = allPhaseDemands().find(entry => entry.id === demand.id);
     if (item?.past) continue;
     if (isOfficeUnassigned(demand.name)) {
@@ -420,10 +423,11 @@ function resourceGroups() {
   return [...map.values()].sort((a, b) => a.name.localeCompare(b.name, "de"));
 }
 function allPhaseDemands() {
-  return projects().flatMap(project => project.demands.map(demand => {
+  return projects().flatMap(project => project.demands.flatMap(demand => {
     const phase = project.phasePlan.find(item => item.phaseKey === demand.phaseKey);
+    if (phase?.status === "none") return [];
     const window = phaseMonthWindow(phase, CURRENT_MONTH);
-    return {
+    return [{
       id: demand.id,
       name: demand.name,
       resourceKey: resourceKey(demand.name),
@@ -434,7 +438,7 @@ function allPhaseDemands() {
       project,
       phase,
       demand
-    };
+    }];
   }));
 }
 function assessmentForResource(key) {
@@ -506,9 +510,10 @@ function demandStatus(item) {
   return "ok";
 }
 function phaseResourceStatus(project, phaseKey) {
-  const items = allPhaseDemands().filter(item => item.project.id === project.id && item.demand.phaseKey === phaseKey);
   const phase = project.phasePlan.find(row => row.phaseKey === phaseKey);
-  if (!items.length) return phase?.resourceClarification === "none" ? "ok" : "open";
+  if (phase?.status === "none") return "ok";
+  const items = allPhaseDemands().filter(item => item.project.id === project.id && item.demand.phaseKey === phaseKey);
+  if (!items.length) return "open";
   const severity = { ok: 0, watch: 1, open: 2, gap: 3 };
   return items.map(demandStatus).sort((a, b) => severity[b] - severity[a])[0];
 }
