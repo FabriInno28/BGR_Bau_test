@@ -585,42 +585,77 @@ function relevantResourcePhases(project) {
 }
 function projectResourceOverview(project) {
   const phases = relevantResourcePhases(project).map(row => ({ row, status: phaseResourceStatus(project, row.phaseKey) }));
-  return { project, phases, status: strongestResourceStatus(phases.map(item => item.status)) };
+  const relevantDemands = project.demands.filter(demand => project.phasePlan.find(row => row.phaseKey === demand.phaseKey)?.status !== "none");
+  const meta = projectResourceCostMeta(project, relevantDemands);
+  const openGroupPt = relevantDemands.filter(demand => isOfficeUnassigned(demand.name)).reduce((sum, demand) => sum + (nullableNumberValue(demand.remainingPt) ?? 0), 0);
+  return {
+    project,
+    phases,
+    status: strongestResourceStatus(phases.map(item => item.status)),
+    totalPt: relevantDemands.reduce((sum, demand) => sum + (nullableNumberValue(demand.remainingPt) ?? 0), 0),
+    resourceCount: new Set(relevantDemands.filter(demand => !isOfficeUnassigned(demand.name)).map(demand => resourceKey(demand.name))).size,
+    resourceCost: meta.total,
+    unpriced: meta.unpriced,
+    openGroupPt
+  };
 }
 function renderResourceOverview() {
   const container = $("#resource-matrix");
   const actionOnly = $("#resource-action-only")?.checked ?? true;
   $$("[data-resource-overview]").forEach(button => button.classList.toggle("active", button.dataset.resourceOverview === resourceOverviewMode));
+
   if (resourceOverviewMode === "resource") {
     const officeItems = allPhaseDemands().filter(item => !item.past && isOfficeUnassigned(item.name));
     const entries = resourceGroups().map(group => {
       const assessment = assessmentForResource(group.key);
       const demands = allPhaseDemands().filter(item => item.resourceKey === group.key && !item.past);
-      return { name: group.name, status: assessment.status, demands };
+      const byProject = new Map();
+      demands.forEach(item => {
+        if (!byProject.has(item.project.id)) byProject.set(item.project.id, { project: item.project, pt: 0, statuses: [] });
+        const row = byProject.get(item.project.id);
+        row.pt += item.pt ?? 0;
+        row.statuses.push(demandStatus(item));
+      });
+      return { name: group.name, status: assessment.status, demands, byProject: [...byProject.values()] };
     });
-    if (officeItems.length) entries.push({ name: OFFICE_UNASSIGNED, status: "open", demands: officeItems });
-    const visible = entries.filter(entry => !actionOnly || entry.status !== "ok").sort((a,b) => RESOURCE_SEVERITY[b.status] - RESOURCE_SEVERITY[a.status] || a.name.localeCompare(b.name,"de"));
+    if (officeItems.length) {
+      const byProject = new Map();
+      officeItems.forEach(item => {
+        if (!byProject.has(item.project.id)) byProject.set(item.project.id, { project: item.project, pt: 0, statuses: [] });
+        const row = byProject.get(item.project.id);
+        row.pt += item.pt ?? 0;
+        row.statuses.push("open");
+      });
+      entries.push({ name: OFFICE_UNASSIGNED, status: "open", demands: officeItems, byProject: [...byProject.values()] });
+    }
+    const visible = entries
+      .filter(entry => !actionOnly || entry.status !== "ok")
+      .sort((a,b) => RESOURCE_SEVERITY[b.status] - RESOURCE_SEVERITY[a.status] || a.name.localeCompare(b.name,"de"));
     container.innerHTML = visible.length ? `<div class="resource-overview-list">${visible.map(entry => {
-      const shown = actionOnly ? entry.demands.filter(item => demandStatus(item) !== "ok") : entry.demands;
-      return `<article class="resource-overview-row ${entry.status}">
-        <div class="overview-main"><span class="status-dot"></span><div><strong>${esc(entry.name)}</strong><small>${entry.demands.length} Bedarfe in ${new Set(entry.demands.map(item => item.project.id)).size} Projekten</small></div></div>
+      const totalPt = entry.demands.reduce((sum, item) => sum + (item.pt ?? 0), 0);
+      return `<article class="resource-overview-row resource-summary ${entry.status}">
+        <div class="overview-main"><span class="status-dot"></span><div><strong>${esc(entry.name)}</strong><small>${entry.byProject.length} Projekte · ${totalPt} PT Restbedarf</small></div></div>
         <span class="resource-status ${entry.status}">${esc(overviewStatusLabel(entry.status))}</span>
-        <div class="overview-details">${shown.length ? shown.slice(0,6).map(item => `<button type="button" data-edit-project="${esc(item.project.id)}"><strong>${esc(item.project.object)}</strong><span>${esc(phaseInfo(item.demand.phaseKey).label)} · ${esc(overviewStatusLabel(demandStatus(item)))}</span></button>`).join("") : '<span class="overview-ok">Aktuell kein Handlungsbedarf.</span>'}</div>
+        <div class="overview-details project-pills">${entry.byProject.slice(0,6).map(item => `<button type="button" data-edit-project="${esc(item.project.id)}"><strong>${esc(item.project.object)}</strong><span>${item.pt} PT · ${esc(overviewStatusLabel(strongestResourceStatus(item.statuses)))}</span></button>`).join("") || '<span class="overview-ok">Kein Projektbedarf.</span>'}</div>
       </article>`;
     }).join("")}</div>` : '<div class="empty-note">Aktuell gibt es in dieser Sicht keinen Handlungsbedarf.</div>';
     return;
   }
+
   const entries = projects().map(projectResourceOverview)
     .filter(entry => !actionOnly || entry.status !== "ok")
     .sort((a,b) => RESOURCE_SEVERITY[b.status] - RESOURCE_SEVERITY[a.status] || a.project.object.localeCompare(b.project.object,"de"));
-  container.innerHTML = entries.length ? `<div class="resource-overview-list">${entries.map(entry => {
-    const shown = actionOnly ? entry.phases.filter(item => item.status !== "ok") : entry.phases;
-    return `<article class="resource-overview-row ${entry.status}" data-edit-project="${esc(entry.project.id)}">
-      <div class="overview-main"><span class="status-dot"></span><div><strong>${esc(entry.project.object)}</strong><small>Aktueller Stand: ${esc(phaseInfo(entry.project.currentPhaseKey).label)}</small></div></div>
+  container.innerHTML = entries.length ? `<div class="resource-overview-list">${entries.map(entry => `<article class="resource-overview-row project-summary ${entry.status}" data-edit-project="${esc(entry.project.id)}">
+      <div class="overview-main"><span class="status-dot"></span><div><strong>${esc(entry.project.object)}</strong><small>${esc(planningDepthInfo(entry.project).short)} · aktueller Stand: ${esc(phaseInfo(entry.project.currentPhaseKey).label)}</small></div></div>
       <span class="resource-status ${entry.status}">${esc(overviewStatusLabel(entry.status))}</span>
-      <div class="overview-details">${shown.length ? shown.map(item => `<span class="overview-phase ${item.status}"><strong>${esc(phaseInfo(item.row.phaseKey).label)}</strong><small>${esc(overviewStatusLabel(item.status))}</small></span>`).join("") : '<span class="overview-ok">Ressourcen aktuell gesichert.</span>'}</div>
-    </article>`;
-  }).join("")}</div>` : '<div class="empty-note">Aktuell gibt es in dieser Sicht keinen Handlungsbedarf.</div>';
+      <div class="project-resource-totals">
+        <span><b>${entry.resourceCount}</b> Ressourcen</span>
+        <span><b>${entry.totalPt}</b> PT Restbedarf</span>
+        <span><b>${chf(entry.resourceCost, true)}</b> Ressourcenkosten</span>
+        ${entry.unpriced ? `<span class="open"><b>${entry.unpriced}</b> Ansätze offen</span>` : ""}
+        ${entry.openGroupPt ? `<span class="open"><b>${entry.openGroupPt}</b> PT Geschäftsstelle offen</span>` : ""}
+      </div>
+    </article>`).join("")}</div>` : '<div class="empty-note">Aktuell gibt es in dieser Sicht keinen Handlungsbedarf.</div>';
 }
 function unassessedNeeds() {
   return allPhaseDemands().filter(item => !item.past && (item.pt == null || !item.startMonth || !item.endMonth || demandStatus(item) === "open"));
