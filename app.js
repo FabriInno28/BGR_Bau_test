@@ -898,20 +898,71 @@ function renderDemandEditor() {
   $("#demand-editor").innerHTML = editDemands.length ? editDemands.map((demand, index) => {
     const phase = editPhasePlan.find(item => item.phaseKey === demand.phaseKey);
     const noActivity = phase?.status === "none";
+    const groupOpen = isOfficeUnassigned(demand.name);
     const window = noActivity ? {} : phaseMonthWindow(phase, CURRENT_MONTH);
     const statusText = noActivity ? "Phase: Keine Tätigkeit" : window.startMonth ? `${monthLabel(window.startMonth)} bis ${monthLabel(window.endMonth)}` : "Phasenzeitraum noch offen";
+    const hoursPerPt = nullableNumberValue(demand.hoursPerPt) ?? 8;
+    const resourceCost = demandResourceCost({ ...demand, hoursPerPt });
     return `<div class="demand-card ${noActivity ? "no-activity-demand" : ""}" data-demand="${index}">
-      <div class="demand-summary simple"><label><span>Projektphase</span><select class="d-phase">${phaseOptions(demand.phaseKey)}</select></label><label><span>Person oder Firma</span><select class="d-name">${demandResourceOptions(demand.name)}</select></label><label><span>Noch benötigte PT</span><input class="d-remaining" type="number" min="0.5" step=".5" value="${esc(demand.remainingPt)}" placeholder="z. B. 18"></label><button type="button" class="remove" data-remove-demand="${index}" aria-label="Ressourcenbedarf löschen">×</button></div>
-      <div class="planning-state"><strong>${esc(statusText)}</strong><span>${noActivity ? "Dieser Bedarf wird nicht in die Kapazitätsprüfung einbezogen, solange die Phase auf «Keine Tätigkeit» steht." : isOfficeUnassigned(demand.name) ? "Offener Aufwand der Geschäftsstelle: noch keiner Person zugeteilt. Keine zusätzliche Kapazität und keine Freigabe, bis zugeteilt." : "Dieser eine Wert gilt für die ganze Phase. Das BauRadar verteilt ihn nicht auf Monate."}</span>${demand.migrationNote ? `<small>${esc(demand.migrationNote)}</small>` : ""}</div>
-      ${!noActivity && isOfficeUnassigned(demand.name) ? `<div class="office-assign"><div><strong>Personentage zuordnen</strong><small>Die gewählten PT werden hier abgezogen und bei der Person in derselben Phase hinzugefügt – kein doppelter Bedarf.</small></div><label><span>Person</span><select class="d-assign-person">${options(OFFICE_PEOPLE, "", "Person wählen")}</select></label><label><span>PT</span><input class="d-assign-pt" type="number" min="0.5" step=".5" max="${esc(demand.remainingPt)}" placeholder="z. B. 4"></label><button type="button" class="button primary" data-allocate-office="${index}">PT zuteilen</button></div>` : ""}
+      <div class="demand-summary cost-aware">
+        <label><span>Projektphase</span><select class="d-phase">${phaseOptions(demand.phaseKey)}</select></label>
+        <label><span>Person oder Firma</span><select class="d-name">${demandResourceOptions(demand.name)}</select></label>
+        <label><span>Noch benötigte PT</span><input class="d-remaining" type="number" min="0.5" step=".5" value="${esc(demand.remainingPt)}" placeholder="z. B. 18"></label>
+        <label><span>Stunden pro PT</span><input class="d-hours" type="number" min="0.5" step=".25" value="${esc(hoursPerPt)}" placeholder="8"></label>
+        <label><span>Stundensatz CHF</span><input class="d-rate" type="number" min="0" step="5" value="${esc(demand.hourlyRate ?? "")}" placeholder="${groupOpen ? "nach Zuteilung" : "z. B. 140"}" ${groupOpen ? "disabled" : ""}></label>
+        <div class="demand-cost-preview"><span>Ressourcenkosten</span><strong data-demand-cost>${groupOpen ? "nach Zuteilung" : resourceCost == null ? "Stundensatz offen" : chf(resourceCost)}</strong></div>
+        <button type="button" class="remove" data-remove-demand="${index}" aria-label="Ressourcenbedarf löschen">×</button>
+      </div>
+      <div class="planning-state"><strong>${esc(statusText)}</strong><span>${noActivity ? "Dieser Bedarf wird nicht in die Kapazitätsprüfung und Kostenberechnung einbezogen, solange die Phase auf «Keine Tätigkeit» steht." : groupOpen ? "Offener Aufwand der Geschäftsstelle: noch keiner Person zugeteilt. Erst nach der Zuteilung entsteht ein personeller Kostenansatz." : "PT × Stunden pro PT × Stundensatz = Ressourcenkosten dieses Projekts. Die Kosten werden im Bereich Finanzen separat ausgewiesen."}</span>${demand.migrationNote ? `<small>${esc(demand.migrationNote)}</small>` : ""}</div>
+      ${!noActivity && groupOpen ? `<div class="office-assign"><div><strong>Personentage zuordnen</strong><small>Die gewählten PT werden hier abgezogen und bei der Person in derselben Phase hinzugefügt – kein doppelter Bedarf.</small></div><label><span>Person</span><select class="d-assign-person">${options(OFFICE_PEOPLE, "", "Person wählen")}</select></label><label><span>PT</span><input class="d-assign-pt" type="number" min="0.5" step=".5" max="${esc(demand.remainingPt)}" placeholder="z. B. 4"></label><button type="button" class="button primary" data-allocate-office="${index}">PT zuteilen</button></div>` : ""}
     </div>`;
   }).join("") : '<div class="empty-note">Noch kein Ressourcenbedarf eingetragen.</div>';
 }
+function updateDemandCostPreviews() {
+  $$("[data-demand]").forEach(row => {
+    const name = canonicalResourceName(row.querySelector(".d-name")?.value || "");
+    const pt = nullableNumberValue(row.querySelector(".d-remaining")?.value);
+    const hoursPerPt = nullableNumberValue(row.querySelector(".d-hours")?.value);
+    const rate = nullableNumberValue(row.querySelector(".d-rate")?.value);
+    const target = row.querySelector("[data-demand-cost]");
+    if (!target) return;
+    if (isOfficeUnassigned(name)) target.textContent = "nach Zuteilung";
+    else if (pt == null || hoursPerPt == null || rate == null) target.textContent = "Stundensatz offen";
+    else target.textContent = chf(pt * hoursPerPt * rate);
+  });
+}
+function renderResourceCostSummary() {
+  const container = $("#resource-cost-summary");
+  if (!container) return;
+  const tempProject = { phasePlan: editPhasePlan, demands: editDemands };
+  const relevant = editDemands.filter(demand => editPhasePlan.find(row => row.phaseKey === demand.phaseKey)?.status !== "none" && !isOfficeUnassigned(demand.name));
+  const rows = relevant.map(demand => ({
+    ...demand,
+    hours: demandHours(demand),
+    cost: demandResourceCost(demand)
+  }));
+  const total = rows.reduce((sum, row) => sum + (row.cost ?? 0), 0);
+  const unpriced = rows.filter(row => row.cost == null).length;
+  const groupPt = editDemands.filter(demand => !editPhasePlan.find(row => row.phaseKey === demand.phaseKey)?.status === "none" && isOfficeUnassigned(demand.name)).reduce((sum, demand) => sum + (nullableNumberValue(demand.remainingPt) ?? 0), 0);
+  container.innerHTML = `<div class="resource-cost-head"><div><span>Ressourcenkosten aus der Projektplanung</span><strong>${chf(total)}</strong><small>Automatisch aus PT × Stunden/PT × Stundensatz berechnet.</small></div><div class="resource-cost-meta"><span>${rows.length} Ressourcenpositionen</span><span>${unpriced ? `${unpriced} ohne Stundensatz` : "alle Ansätze hinterlegt"}</span></div></div>
+    ${rows.length ? `<div class="resource-cost-lines">${rows.map(row => `<div><span><strong>${esc(row.name)}</strong> · ${nullableNumberValue(row.remainingPt) ?? "–"} PT × ${nullableNumberValue(row.hoursPerPt) ?? "–"} h × ${nullableNumberValue(row.hourlyRate) == null ? "Ansatz offen" : chf(row.hourlyRate) + "/h"}</span><b>${row.cost == null ? "offen" : chf(row.cost)}</b></div>`).join("")}</div>` : '<div class="empty-note">Noch keine namentlich zugeteilten Ressourcen mit Kostenbezug.</div>'}
+    ${groupPt ? `<p class="resource-cost-open">${groupPt} PT der Geschäftsstelle sind noch nicht namentlich zugeteilt und deshalb noch nicht bewertet.</p>` : ""}`;
+}
 function renderFinanceEditor() {
+  renderResourceCostSummary();
   $("#finance-editor").innerHTML = editFinances.length ? editFinances.map((item, index) => {
     const thousands = nullableNumberValue(item.amount) == null ? "" : num(item.amount) / 1000;
-    return `<div class="edit-row cost" data-finance="${index}"><label><span>Jahr</span><select class="pc-year">${YEARS.map(year => `<option ${Number(item.year) === year ? "selected" : ""}>${year}</option>`).join("")}</select></label><label><span>Betrag in Tsd. CHF</span><input class="pc-amount" type="number" min="1" step="1" value="${esc(thousands)}" placeholder="50 = CHF 50’000"></label><label><span>Qualität</span><select class="pc-status">${COST_STATUSES.map(status => `<option value="${status.key}" ${item.status === status.key ? "selected" : ""}>${status.label}</option>`).join("")}</select></label><label><span>Quelle</span><input class="pc-source" value="${esc(item.source || "")}" placeholder="z. B. BGR Schätzung, Budget, Offerte"></label><label><span>Informationsdatum</span><input class="pc-date" type="date" value="${esc(item.informationDate || "")}"></label><button type="button" class="remove" data-remove-finance="${index}">×</button></div>`;
+    const fullAmount = thousands === "" ? null : num(thousands) * 1000;
+    return `<div class="edit-row cost" data-finance="${index}"><label><span>Jahr</span><select class="pc-year">${YEARS.map(year => `<option ${Number(item.year) === year ? "selected" : ""}>${year}</option>`).join("")}</select></label><label class="finance-amount-field"><span>Betrag in Tsd. CHF</span><input class="pc-amount" type="number" min="1" step="1" value="${esc(thousands)}" placeholder="50"><small class="finance-amount-preview">${fullAmount == null ? "z. B. 50 = CHF 50’000" : `= ${chf(fullAmount)}`}</small></label><label><span>Qualität</span><select class="pc-status">${COST_STATUSES.map(status => `<option value="${status.key}" ${item.status === status.key ? "selected" : ""}>${status.label}</option>`).join("")}</select></label><label><span>Quelle</span><input class="pc-source" value="${esc(item.source || "")}" placeholder="z. B. BGR Schätzung, Budget, Offerte"></label><label><span>Informationsdatum</span><input class="pc-date" type="date" value="${esc(item.informationDate || "")}"></label><button type="button" class="remove" data-remove-finance="${index}">×</button></div>`;
   }).join("") : '<div class="empty-note">Noch keine Finanzen erfasst. Das ist zulässig und blockiert keine Freigabe.</div>';
+}
+function updateFinanceAmountPreviews() {
+  $$("[data-finance]").forEach(row => {
+    const value = nullableNumberValue(row.querySelector(".pc-amount")?.value);
+    const target = row.querySelector(".finance-amount-preview");
+    if (!target) return;
+    target.textContent = value == null ? "z. B. 50 = CHF 50’000" : `= ${chf(value * 1000)}`;
+  });
 }
 function renderGateEditor() {
   $("#gate-editor").innerHTML = editGateHistory.length ? editGateHistory.map((gate, index) => {
