@@ -279,8 +279,10 @@ function reconcileBaselineProjects(savedProjects, deletedIds = []) {
       roles: clone(saved.roles),
       phasePlan: clone(saved.phasePlan),
       demands: clone(saved.demands),
-      planningDepth: saved.planningDepth,
+      horizonStartYear: saved.horizonStartYear || saved.startYear,
+      horizonDurationYears: saved.horizonDurationYears,
       roughFinanceK: saved.roughFinanceK,
+      projectOrderStatus: saved.projectOrderStatus,
       finances: clone(saved.finances),
       gateHistory: clone(saved.gateHistory),
       nextDecision: saved.nextDecision
@@ -835,25 +837,42 @@ function effectivePlanningDepth(project) {
 }
 function renderLongHorizon() {
   $("#long-horizon").classList.toggle("hidden", !longOpen);
-  $("#expand-long").textContent = longOpen ? "4–10 Jahre und +10 ausblenden" : "4–10 Jahre und +10 einblenden";
+  $("#expand-long").textContent = longOpen ? "Vorausschau und Perspektive ausblenden" : "Vorausschau und Perspektive einblenden";
   const medium = projects().filter(project => effectivePlanningDepth(project) === "medium");
   const light = projects().filter(project => effectivePlanningDepth(project) === "light");
+
   const mediumCards = medium.map(project => {
-    const rows = project.phasePlan.filter(row => row.status !== "none" && row.startQuarter);
-    const first = rows.slice().sort((a,b) => qIndex(a.startQuarter) - qIndex(b.startQuarter))[0];
+    const start = projectFirstPlannedYear(project);
+    const duration = Number(project.horizonDurationYears) || 1;
+    const end = start ? start + duration - 1 : null;
     const finance = nullableNumberValue(project.roughFinanceK) != null
       ? num(project.roughFinanceK) * 1000
-      : project.finances.reduce((sum, item) => sum + num(item.amount), 0);
-    return `<article class="horizon-project medium" data-select="${esc(project.id)}"><span>4–10 Jahre · Grobplanung</span><strong>${esc(project.object)}</strong><small>${first ? `${esc(phaseInfo(first.phaseKey).label)} · ab ${qLabel(first.startQuarter)}` : esc(phaseInfo(project.currentPhaseKey).label)}${project.roles?.bk && project.roles.bk !== "offen" ? ` · BK: ${esc(project.roles.bk)}` : ""}</small><div><b>${finance ? chf(finance, true) : "Finanzen offen"}</b><em>${project.demands.length ? `${project.demands.length} Ressourcenpositionen` : "Ressourcen grob offen"}</em></div></article>`;
+      : rawMotherCost(project);
+    return `<article class="horizon-project medium" data-select="${esc(project.id)}">
+      <span>Vorausschau · Jahre 4–10</span>
+      <strong>${esc(project.object)}</strong>
+      <small>${esc(project.measure || "Vorhaben zeitlich einordnen")}</small>
+      <div><b>${start ? `${start}${end && end !== start ? `–${end}` : ""}` : "Zeitraum offen"}</b><em>${finance ? `Kosten ca. ${chf(finance, true)} · ±25 %` : "Kosten offen · Ziel ±25 %"}</em></div>
+    </article>`;
   }).join("");
+
   const lightCards = light.map(project => {
-    const year = projectFirstPlannedYear(project);
-    const finance = nullableNumberValue(project.roughFinanceK);
-    return `<article class="horizon-project light" data-select="${esc(project.id)}"><span>+10 Jahre · Perspektive</span><strong>${esc(project.object)}</strong><small>${esc(project.measure || "Vorhaben im Blick behalten")}</small><div><b>${year ? `ab ${year}` : "+10 Jahre"}</b><em>${finance != null ? `Grössenordnung ${chf(finance * 1000, true)}` : "Grössenordnung offen"}${project.nextDecision ? ` · ${esc(project.nextDecision)}` : ""}</em></div></article>`;
+    const start = projectFirstPlannedYear(project);
+    const duration = Number(project.horizonDurationYears) || 1;
+    const finance = nullableNumberValue(project.roughFinanceK) != null
+      ? num(project.roughFinanceK) * 1000
+      : rawMotherCost(project);
+    return `<article class="horizon-project light" data-select="${esc(project.id)}">
+      <span>Perspektive · Jahre 11–30</span>
+      <strong>${esc(project.object)}</strong>
+      <small>${esc(project.measure || "Vorhaben im Blick behalten")}</small>
+      <div><b>${start ? `Start ca. ${start} · ${duration} J.` : "Projektstart offen"}</b><em>${finance ? `Kosten ca. ${chf(finance, true)} · ±50 %` : "Kosten offen · Ziel ±50 %"}${project.nextDecision ? ` · ${esc(project.nextDecision)}` : ""}</em></div>
+    </article>`;
   }).join("");
-  $("#long-horizon").innerHTML = `<div class="long-title"><strong>Planung mit passender Flughöhe</strong><span>1–3 Jahre detailliert · 4–10 Jahre grob · +10 Jahre als strategische Perspektive</span></div>
-    <div class="horizon-section"><div class="horizon-heading"><strong>4–10 Jahre</strong><span>${medium.length} Vorhaben</span></div><div class="horizon-projects">${mediumCards || '<div class="empty-note">Noch keine Vorhaben in der Grobplanung.</div>'}</div></div>
-    <div class="horizon-section"><div class="horizon-heading"><strong>+10 Jahre</strong><span>${light.length} Vorhaben</span></div><div class="horizon-projects light-grid">${lightCards || '<div class="empty-note">Noch keine strategischen Perspektiven erfasst.</div>'}</div></div>`;
+
+  $("#long-horizon").innerHTML = `<div class="long-title"><strong>Rollende Planung gemäss Bauhandbuch</strong><span>Nächste 1–3 Jahre detailliert. Jahre 4–10 als Vorausschau. Jahre 11–30 als Perspektive.</span></div>
+    <div class="horizon-section"><div class="horizon-heading"><strong>Vorausschau · 4–10 Jahre</strong><span>${medium.length} Vorhaben</span></div><div class="horizon-projects">${mediumCards || '<div class="empty-note">Noch keine Vorhaben in der Vorausschau.</div>'}</div></div>
+    <div class="horizon-section"><div class="horizon-heading"><strong>Perspektive · 11–30 Jahre</strong><span>${light.length} Vorhaben</span></div><div class="horizon-projects light-grid">${lightCards || '<div class="empty-note">Noch keine langfristigen Perspektiven erfasst.</div>'}</div></div>`;
 }
 function renderDetail() {
   let project = projects().find(item => item.id === selectedId);
@@ -874,7 +893,7 @@ function renderDetail() {
   const depth = planningDepthInfo(project);
   $("#project-detail").innerHTML = `<div class="project-cover"><div class="meta"><span>${esc(project.kind)} · ${esc(depth.short)} · ${state.mode === "scenario" ? "Szenario" : "scharfer Stand"}</span><span class="status-chip">${issues.length ? `${issues.length} Punkte offen` : "Plan prüfbar"}</span></div><h3>${esc(project.object)}</h3><p>${esc(project.measure)}</p></div>
     <div class="project-body">
-      <div class="mother-current"><span>Mutterstand ${DATA_STAND_LABEL}</span><strong>${esc(phaseInfo(project.motherPhaseKey).label)}</strong><small>${project.uncertain ? "Quelle als unsicher markiert · " : ""}${bk ? `Verantwortung Baukommission: ${esc(bk)}` : "Verantwortung Baukommission offen"}</small></div>
+      <div class="mother-current"><span>Mutterstand ${DATA_STAND_LABEL}</span><strong>${esc(phaseInfo(project.motherPhaseKey).label)}</strong><small>${project.uncertain ? "Quelle als unsicher markiert · " : ""}${bk ? `Vertretung Allgemeine Baukommission: ${esc(bk)}` : "Vertretung Allgemeine Baukommission offen"}</small></div>
       <div class="next-box"><span>Phasentor</span><strong>${esc(latestGate?.status || "noch kein Entscheid erfasst")}</strong><small>${latestGate ? `${esc(phaseInfo(latestGate.phaseKey).label)} · ${esc(latestGate.authority)} · ${esc(latestGate.date)}` : "Im Projekt planen oder protokollieren"}</small></div>
       <span class="section-label">Alle Projektphasen</span>
       <div class="phase-steps">${PHASES.map(phase => {
@@ -1788,7 +1807,7 @@ $("#import-backup").addEventListener("change", async event => {
 });
 
 $("#export-projects").addEventListener("click", () => csv("BGR_BauRadar_Projekte_und_Phasen.csv", [
-  ["Arbeitsstand", "Projekt ID", "Objekt", "Projektart", "Mutterstand", "Aktueller Stand", "Verantwortung Baukommission", "Projektphase", "Status", "Start", "Ende"],
+  ["Arbeitsstand", "Projekt ID", "Objekt", "Projektkategorie", "Mutterstand", "Aktueller Stand", "Vertretung Allgemeine Baukommission", "Projektphase", "Status", "Start", "Ende"],
   ...projects().flatMap(project => project.phasePlan.map(row => [state.mode === "scenario" ? activeWorkspace().name : "Scharfer Stand", project.id, project.object, project.kind, phaseInfo(project.motherPhaseKey).label, phaseInfo(project.currentPhaseKey).label, project.roles?.bk || "", phaseInfo(row.phaseKey).label, PHASE_STATUS[row.status] || row.status, row.startQuarter, row.endQuarter]))
 ]));
 $("#export-resources").addEventListener("click", () => csv("BGR_BauRadar_Ressourcenbedarf.csv", [
