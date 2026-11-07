@@ -413,57 +413,84 @@ function phasePlanIssues(project) {
   }
   return issues;
 }
+function phaseCloseState(row) {
+  const review = row?.closeReview || {};
+  const values = PHASE_CLOSE_FIELDS.map(field => review[field.key] || "");
+  if (values.some(value => value === "clarify")) return "clarify";
+  if (values.every(value => value === "ok")) return "ready";
+  return "open";
+}
 function projectIssues(project) {
   const issues = [];
-  const detail = project.planningDepth === "detail";
+  const detail = effectivePlanningDepth(project) === "detail";
+  const isBuildProject = project.kind === "Bauprojekt";
   if (project.uncertain) issues.push("Mutterdaten als unsicher markiert");
-  if (project.kind === "Bauprojekt" && (!project.roles?.bk || String(project.roles.bk).toLowerCase() === "offen")) issues.push("Verantwortung Baukommission offen");
-  if (detail) {
+
+  if (isBuildProject && (!project.roles?.bk || String(project.roles.bk).toLowerCase() === "offen")) {
+    issues.push("Vertretung Allgemeine Baukommission offen");
+  }
+  if (isBuildProject && detail && project.projectOrderStatus !== "vorhanden") {
+    issues.push("Schriftlicher Projektauftrag noch nicht vorhanden");
+  }
+
+  if (detail && isBuildProject) {
     project.phasePlan.forEach(row => {
       if (row.status === "none") return;
       if (row.startQuarter && row.endQuarter) {
         const phaseDemands = project.demands.filter(demand => demand.phaseKey === row.phaseKey);
         if (!phaseDemands.length) issues.push(`${phaseInfo(row.phaseKey).short}: Ressourcenbedarf noch nicht erfasst`);
       }
+      if (row.status === "done") {
+        const closeState = phaseCloseState(row);
+        if (closeState === "open") issues.push(`${phaseInfo(row.phaseKey).short}: Phasenabschluss noch nicht vollständig geprüft`);
+        if (closeState === "clarify") issues.push(`${phaseInfo(row.phaseKey).short}: Phasenabschluss mit Klärungsbedarf`);
+      }
     });
+    if (!plannedPhases(project).length) issues.push("Phasenplan offen");
+    if (phaseIndex(project.currentPhaseKey) >= 1 && (!project.roles.bhb || String(project.roles.bhb).toLowerCase() === "offen")) issues.push("Bauherrenbegleitung offen");
   }
-  if (detail && !plannedPhases(project).length) issues.push("Phasenplan offen");
-  if (project.kind === "Bauprojekt" && detail && phaseIndex(project.currentPhaseKey) >= 1 && (!project.roles.bhb || String(project.roles.bhb).toLowerCase() === "offen")) issues.push("Bauherrenbegleitung offen");
-  for (const demand of project.demands) {
-    const phase = project.phasePlan.find(row => row.phaseKey === demand.phaseKey);
-    if (phase?.status === "none") continue;
-    const item = allPhaseDemands().find(entry => entry.id === demand.id);
-    if (item?.past) continue;
-    if (isOfficeUnassigned(demand.name)) {
-      issues.push(`${phaseInfo(demand.phaseKey).short}: ${demand.remainingPt || "offene"} PT der Geschäftsstelle noch nicht namentlich zugeteilt`);
-      if (detail && nullableNumberValue(demand.remainingPt) == null) issues.push("Geschäftsstelle: Restbedarf noch nicht erfasst");
-      continue;
-    }
-    if (detail && nullableNumberValue(demand.remainingPt) == null) issues.push(`${demand.name || "Ressource"}: Restbedarf noch nicht erfasst`);
-    else if (detail && !item?.startMonth && nullableNumberValue(demand.remainingPt) != null) issues.push(`${demand.name}: ${phaseInfo(demand.phaseKey).short} zeitlich noch nicht beurteilbar`);
-    else if (item?.startMonth) {
-      const status = demandStatus(item);
-      if (status === "gap") issues.push(`${phaseInfo(demand.phaseKey).short}: ${demand.name} nicht gemeinsam tragbar`);
-      if (status === "watch") issues.push(`${phaseInfo(demand.phaseKey).short}: ${demand.name} Kapazität knapp`);
-      if (detail && status === "open") issues.push(`${phaseInfo(demand.phaseKey).short}: ${demand.name} Verfügbarkeit ungeklärt`);
-    }
-    if (detail && nullableNumberValue(demand.remainingPt) != null && !isOfficeUnassigned(demand.name) && nullableNumberValue(demand.hourlyRate) == null) {
-      issues.push(`${demand.name}: Stundensatz für Ressourcenkosten fehlt`);
-    }
-  }
-  project.finances.forEach(finance => {
-    const financeErrors = detail
-      ? validateFinanceEntry(finance)
-      : [
-          ...(nullableNumberValue(finance.amount) == null ? ["Betrag fehlt oder ist ungültig"] : []),
-          ...(!Number.isInteger(Number(finance.year)) ? ["Jahr ist ungültig"] : [])
-        ];
-    if (financeErrors.length) issues.push(`Finanzen ${finance.year || "Jahr offen"}: Angaben unvollständig`);
-  });
+
   if (detail) {
+    for (const demand of project.demands) {
+      const phase = project.phasePlan.find(row => row.phaseKey === demand.phaseKey);
+      if (phase?.status === "none") continue;
+      const item = allPhaseDemands().find(entry => entry.id === demand.id);
+      if (item?.past && nullableNumberValue(demand.remainingPt) > 0) {
+        issues.push(`${phaseInfo(demand.phaseKey).short}: Phase abgelaufen, aber ${demand.remainingPt} PT Restbedarf offen`);
+        continue;
+      }
+      if (item?.past) continue;
+      if (isOfficeUnassigned(demand.name)) {
+        issues.push(`${phaseInfo(demand.phaseKey).short}: ${demand.remainingPt || "offene"} PT der Geschäftsstelle noch nicht namentlich zugeteilt`);
+        if (nullableNumberValue(demand.remainingPt) == null) issues.push("Geschäftsstelle: Restbedarf noch nicht erfasst");
+        continue;
+      }
+      if (nullableNumberValue(demand.remainingPt) == null) issues.push(`${demand.name || "Ressource"}: Restbedarf noch nicht erfasst`);
+      else if (!item?.startMonth) issues.push(`${demand.name}: ${phaseInfo(demand.phaseKey).short} zeitlich noch nicht beurteilbar`);
+      else {
+        const status = demandStatus(item);
+        if (status === "gap") issues.push(`${phaseInfo(demand.phaseKey).short}: ${demand.name} nicht gemeinsam tragbar`);
+        if (status === "watch") issues.push(`${phaseInfo(demand.phaseKey).short}: ${demand.name} Kapazität knapp`);
+        if (status === "open") issues.push(`${phaseInfo(demand.phaseKey).short}: ${demand.name} Verfügbarkeit ungeklärt`);
+      }
+      if (nullableNumberValue(demand.remainingPt) != null && !isOfficeUnassigned(demand.name) && nullableNumberValue(demand.hourlyRate) == null) {
+        issues.push(`${demand.name}: Stundensatz für Ressourcenkosten fehlt`);
+      }
+    }
+    project.finances.forEach(finance => {
+      if (validateFinanceEntry(finance).length) issues.push(`Finanzen ${finance.year || "Jahr offen"}: Angaben unvollständig`);
+    });
+  } else {
+    if (nullableNumberValue(project.roughFinanceK) == null) {
+      issues.push(`${planningDepthInfo(project).short}: grobe Kosten noch offen`);
+    }
+  }
+
+  if (detail && isBuildProject) {
     validatePhaseTransitions({ phasePlan: project.phasePlan, gateHistory: project.gateHistory, currentPhaseKey: project.currentPhaseKey }).forEach(issue => {
-      if (issue.type === "wrongAuthority") issues.push(`${phaseInfo(issue.phaseKey).short}: Phasentor braucht Entscheid Gesamtvorstand`);
-      else issues.push(`${phaseInfo(issue.phaseKey).short}: Phasentor nicht freigegeben`);
+      const gate = FORMAL_GATES.find(item => item.key === issue.gateKey);
+      if (issue.type === "wrongAuthority") issues.push(`${gate?.label || "Phasentor"}: Entscheid des Gesamtvorstands erforderlich`);
+      else issues.push(`${gate?.label || "Phasentor"}: Vorstandsentscheid nicht freigegeben`);
     });
     issues.push(...phasePlanIssues(project));
   }
