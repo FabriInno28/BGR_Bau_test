@@ -1171,14 +1171,26 @@ function syncEditors() {
       ...editPhasePlan[index],
       status,
       startQuarter: status === "none" ? "" : (row.querySelector(".pp-start")?.value || ""),
-      endQuarter: status === "none" ? "" : (row.querySelector(".pp-end")?.value || "")
+      endQuarter: status === "none" ? "" : (row.querySelector(".pp-end")?.value || ""),
+      closeReview: editPhasePlan[index]?.closeReview || emptyCloseReview()
     };
+  });
+  $$("[data-phase-close]").forEach(card => {
+    const index = Number(card.dataset.phaseClose);
+    if (!Number.isFinite(index) || !editPhasePlan[index]) return;
+    const review = { ...(editPhasePlan[index].closeReview || emptyCloseReview()) };
+    PHASE_CLOSE_FIELDS.forEach(field => {
+      review[field.key] = card.querySelector(`[data-close-field="${field.key}"]`)?.value || "";
+    });
+    review.date = card.querySelector(".close-date")?.value || "";
+    review.note = card.querySelector(".close-note")?.value.trim() || "";
+    editPhasePlan[index].closeReview = review;
   });
   editDemands = $$("[data-demand]").map((row, index) => ({
     ...editDemands[index],
     id: editDemands[index]?.id || uuid("d"),
     name: canonicalResourceName(row.querySelector(".d-name").value),
-    phaseKey: row.querySelector(".d-phase").value,
+    phaseKey: canonicalPhaseKey(row.querySelector(".d-phase").value),
     remainingPt: row.querySelector(".d-remaining").value,
     hoursPerPt: row.querySelector(".d-hours")?.value || "8",
     hourlyRate: row.querySelector(".d-rate")?.value || ""
@@ -1194,25 +1206,34 @@ function syncEditors() {
       informationDate: row.querySelector(".pc-date").value
     };
   });
-  editGateHistory = $$("[data-gate]").map((row, index) => {
-    if (editGateHistory[index]?.persisted) return editGateHistory[index];
-    return {
+  $$("[data-gate]").forEach(row => {
+    const index = Number(row.dataset.gate);
+    if (!Number.isFinite(index) || !editGateHistory[index] || editGateHistory[index].persisted) return;
+    const gateKey = row.querySelector(".g-key").value;
+    const definition = gateDefinition(gateKey);
+    editGateHistory[index] = {
       ...editGateHistory[index],
       id: editGateHistory[index]?.id || uuid("gate"),
-      phaseKey: row.querySelector(".g-phase").value,
+      gateKey,
+      phaseKey: definition.afterPhase,
       status: row.querySelector(".g-status").value,
-      authority: row.querySelector(".g-authority").value,
+      authority: "Gesamtvorstand",
       date: row.querySelector(".g-date").value,
       reason: row.querySelector(".g-reason").value.trim(),
       conditions: row.querySelector(".g-conditions").value.trim(),
-      nextPhase: row.querySelector(".g-next").value
+      legacyGate: false
     };
   });
 }
+function currentEditorDepth() {
+  return planningHorizon($("#f-horizon-start")?.value, CURRENT_YEAR);
+}
 function validateProjectEditors() {
   const errors = [];
-  const planningDepth = $("#f-planning-depth").value || "detail";
-  const detailed = planningDepth === "detail";
+  const detailed = currentEditorDepth() === "detail";
+  const isBuildProject = $("#f-kind").value === "Bauprojekt";
+  if (!detailed) return errors;
+
   for (const demand of editDemands) {
     const phase = editPhasePlan.find(item => item.phaseKey === demand.phaseKey);
     if (phase?.status === "none") continue;
@@ -1221,7 +1242,7 @@ function validateProjectEditors() {
       const hoursPerPt = nullableNumberValue(demand.hoursPerPt);
       const hourlyRate = nullableNumberValue(demand.hourlyRate);
       if (hoursPerPt == null || hoursPerPt <= 0) errors.push(`${demand.name || "Ressource"}: Stunden pro PT fehlen`);
-      if (detailed && hourlyRate == null) errors.push(`${demand.name || "Ressource"}: Stundensatz fehlt`);
+      if (hourlyRate == null) errors.push(`${demand.name || "Ressource"}: Stundensatz fehlt`);
     }
   }
   const demandKeys = editDemands
@@ -1229,23 +1250,19 @@ function validateProjectEditors() {
     .map(demand => `${resourceKey(demand.name)}:${demand.phaseKey}`)
     .filter(key => !key.startsWith(":"));
   if (new Set(demandKeys).size !== demandKeys.length) errors.push("Dieselbe Ressource darf je Projektphase nur einmal erfasst werden");
+
   for (const finance of editFinances) {
-    const financeErrors = detailed
-      ? validateFinanceEntry(finance)
-      : [
-          ...(nullableNumberValue(finance.amount) == null ? ["Betrag fehlt oder ist ungültig"] : []),
-          ...(!Number.isInteger(Number(finance.year)) ? ["Jahr ist ungültig"] : [])
-        ];
-    errors.push(...financeErrors.map(error => `Finanzen ${finance.year || ""}: ${error}`));
+    errors.push(...validateFinanceEntry(finance).map(error => `Finanzen ${finance.year || ""}: ${error}`));
   }
-  if (detailed) {
-    for (const gate of editGateHistory.filter(item => !item.persisted)) {
+
+  if (isBuildProject) {
+    for (const gate of editGateHistory.filter(item => !item.persisted && item.gateKey && !item.legacyGate)) {
       if (!gate.date) errors.push("Phasentor: Datum ist Pflicht");
       if (gate.status !== "geplant" && !gate.reason) errors.push("Phasentor: Kurzbegründung ist bei einem erfolgten Entscheid Pflicht");
     }
     validatePhaseTransitions({ phasePlan: editPhasePlan, gateHistory: editGateHistory, currentPhaseKey: $("#f-phase").value }).forEach(issue => {
-      if (issue.type === "wrongAuthority") errors.push(`Phasentor ${phaseInfo(issue.phaseKey).short}: Entscheid des Gesamtvorstands erforderlich`);
-      else errors.push(`Phasentor ${phaseInfo(issue.phaseKey).short}: Freigabe fehlt`);
+      const definition = gateDefinition(issue.gateKey);
+      errors.push(`${definition.label}: ${issue.type === "wrongAuthority" ? "Entscheid des Gesamtvorstands erforderlich" : "Vorstandsfreigabe fehlt"}`);
     });
   }
   return errors;
@@ -1265,8 +1282,10 @@ function openProject(id, newProject = false) {
     roles: { gs: "offen", bk: "offen", vs: "nach Bedarf", bhb: "offen" },
     cashflow: [],
     cost: "",
-    planningDepth: "detail",
+    horizonStartYear: CURRENT_YEAR,
+    horizonDurationYears: 1,
     roughFinanceK: "",
+    projectOrderStatus: "offen",
     nextDecision: ""
   });
   if (!project) return;
@@ -1276,24 +1295,26 @@ function openProject(id, newProject = false) {
   $("#f-object").value = project.object;
   $("#f-measure").value = project.measure;
   $("#f-kind").value = project.kind;
-  renderProjectTypeGuidance();
-  $("#f-planning-depth").value = project.planningDepth || "detail";
+  $("#f-horizon-start").value = project.horizonStartYear || project.startYear || CURRENT_YEAR;
+  $("#f-horizon-duration").value = project.horizonDurationYears || 1;
   $("#f-rough-finance").value = project.roughFinanceK ?? "";
-  renderPlanningDepthGuidance();
+  $("#f-project-order").value = project.projectOrderStatus || (project.kind === "Bauprojekt" ? "offen" : "nicht erforderlich");
   $("#f-phase").value = project.currentPhaseKey;
   $("#f-next").value = project.nextDecision || "";
   setRoleSelect("#f-gs", project.roles.gs, "offen");
   setRoleSelect("#f-bk", project.roles.bk, "offen");
   setRoleSelect("#f-vs", project.roles.vs, "nach Bedarf");
   setRoleSelect("#f-bhb", project.roles.bhb, "offen");
-  renderBKSummary();
   editPhasePlan = clone(project.phasePlan);
   editDemands = clone(project.demands);
   editFinances = clone(project.finances || []);
-  editGateHistory = clone(project.gateHistory).map(gate => ({ ...gate, persisted: true }));
+  editGateHistory = clone(project.gateHistory || []).map(gate => ({ ...gate, persisted: true }));
+  renderProjectTypeGuidance();
+  renderPlanningDepthGuidance();
+  renderBKSummary();
   $("#mother-cost-note").innerHTML = rawMotherCost(project)
     ? `<strong>Referenz ImmoTool / Excel: ${chf(rawMotherCost(project))}</strong><span>Dieser Referenzwert wird nie automatisch mit der Finanzplanung im BauRadar summiert.</span>`
-    : "<strong>Kein Referenzwert</strong><span>Finanzen können projektweit pro Jahr erfasst werden. Fehlende Finanzen blockieren keine Freigabe.</span>";
+    : "<strong>Kein Referenzwert</strong><span>Im 1–3-Jahres-Fenster werden Finanzen detailliert geführt.</span>";
   renderPhasePlanEditor();
   renderDemandEditor();
   renderFinanceEditor();
@@ -1303,27 +1324,42 @@ function openProject(id, newProject = false) {
   $("#project-dialog").showModal();
 }
 function setFormTab(name) {
-  $$("[data-form-tab]").forEach(button => button.classList.toggle("active", button.dataset.formTab === name));
+  const button = $$("[data-form-tab]").find(item => item.dataset.formTab === name);
+  if (button?.classList.contains("hidden")) name = "base";
+  $$("[data-form-tab]").forEach(item => item.classList.toggle("active", item.dataset.formTab === name));
   $$("[data-panel]").forEach(panel => panel.classList.toggle("hidden", panel.dataset.panel !== name));
 }
 function renderProjectTypeGuidance() {
   const selected = $("#f-kind").value;
+  const isBuildProject = selected === "Bauprojekt";
   $$('[data-project-type]').forEach(card => card.classList.toggle("active", card.dataset.projectType === selected));
+  $("#project-order-field").classList.toggle("hidden", !isBuildProject);
+  $("#f-owner-structure").textContent = isBuildProject ? "Projekt-Baukommission" : "Geschäftsstelle";
+  $("#f-owner-structure-note").textContent = isBuildProject
+    ? "Die Bauherrenverantwortung liegt gemäss Bauhandbuch bei der Projekt-Baukommission."
+    : "Bei Unterhaltsprojekten liegt die operative Verantwortung bei der Geschäftsstelle.";
+  renderPlanningDepthGuidance();
 }
 function renderPlanningDepthGuidance() {
-  const key = $("#f-planning-depth")?.value || "detail";
+  const key = currentEditorDepth();
   const info = PLANNING_DEPTHS[key] || PLANNING_DEPTHS.detail;
+  const isBuildProject = $("#f-kind")?.value === "Bauprojekt";
   $("#planning-depth-title").textContent = info.label;
   $("#planning-depth-description").textContent = info.description;
-  $("#f-detail-level").textContent = key === "detail" ? "vollständig" : key === "medium" ? "grob, aber steuerbar" : "strategische Perspektive";
+  $("#f-detail-level").textContent = key === "detail" ? "vollständig · " + info.accuracy : key === "medium" ? "Vorausschau · " + info.accuracy : "Perspektive · " + info.accuracy;
+  $("#rough-finance-accuracy").textContent = `Handbuch: erwartete Kostengenauigkeit ${info.accuracy}.`;
   $("#rough-finance-field").classList.toggle("hidden", key === "detail");
+  $("#detail-current-phase").classList.toggle("hidden", key !== "detail" || !isBuildProject);
   $("#project-dialog").classList.toggle("planning-medium", key === "medium");
   $("#project-dialog").classList.toggle("planning-light", key === "light");
-  $$("[data-form-tab]").forEach(button => {
-    const relaxed = key !== "detail" && ["resources", "gates"].includes(button.dataset.formTab);
-    button.classList.toggle("relaxed", relaxed);
-    button.title = relaxed ? "In diesem Planungshorizont optional" : "";
+
+  $$("[data-detail-tab]").forEach(button => {
+    const tab = button.dataset.formTab;
+    const allowed = key === "detail" && (isBuildProject || ["resources", "money"].includes(tab));
+    button.classList.toggle("hidden", !allowed);
   });
+  const active = $("[data-form-tab].active");
+  if (active?.classList.contains("hidden")) setFormTab("base");
 }
 function renderCapacityYearSummary() {
   const values = $$("[data-capacity-month] .cy-pt").map(input => input.value).filter(value => value !== "");
