@@ -1517,10 +1517,7 @@ $("#project-detail").addEventListener("click", event => {
 $("#edit-selected").addEventListener("click", () => openProject(selectedId));
 $("#new-project").addEventListener("click", () => openProject(null, true));
 $("#f-kind").addEventListener("change", renderProjectTypeGuidance);
-$("#f-planning-depth").addEventListener("change", () => {
-  renderPlanningDepthGuidance();
-  renderFinanceEditor();
-});
+[$("#f-horizon-start"), $("#f-horizon-duration")].forEach(input => input.addEventListener("input", renderPlanningDepthGuidance));
 $("#f-phase").addEventListener("change", () => {
   syncEditors();
   const selected = $("#f-phase").value;
@@ -1542,6 +1539,10 @@ $("#phase-plan-editor").addEventListener("change", event => {
     toast("Die aktuelle Projektphase kann nicht «Keine Tätigkeit» sein.");
   }
   renderPhasePlanEditor();
+});
+$("#phase-close-editor").addEventListener("change", () => {
+  syncEditors();
+  renderPhaseCloseEditor();
 });
 $("#expand-long").addEventListener("click", () => { longOpen = !longOpen; renderLongHorizon(); });
 $$("[data-form-tab]").forEach(button => button.addEventListener("click", () => {
@@ -1604,7 +1605,15 @@ $("#finance-editor").addEventListener("click", event => {
 });
 $("#add-gate").addEventListener("click", () => {
   syncEditors();
-  editGateHistory.push({ id: uuid("gate"), phaseKey: $("#f-phase").value, status: "geplant", authority: "BK", date: "", reason: "", conditions: "", nextPhase: "" });
+  const currentIndex = phaseIndex($("#f-phase").value);
+  const gateKey = currentIndex <= phaseIndex("machbarkeit") ? "tor1" : currentIndex <= phaseIndex("planung") ? "tor2" : "tor3";
+  const definition = gateDefinition(gateKey);
+  editGateHistory.push({ id: uuid("gate"), gateKey, phaseKey: definition.afterPhase, status: "geplant", authority: "Gesamtvorstand", date: "", reason: "", conditions: "", legacyGate: false });
+  renderGateEditor();
+});
+$("#gate-editor").addEventListener("change", event => {
+  if (!event.target.matches(".g-key")) return;
+  syncEditors();
   renderGateEditor();
 });
 $("#gate-editor").addEventListener("click", event => {
@@ -1621,9 +1630,12 @@ $("#project-form").addEventListener("submit", event => {
   syncEditors();
   const id = $("#project-id").value;
   const existing = projects().find(item => item.id === id);
-  const currentPhaseKey = $("#f-phase").value;
-  const planningDepth = $("#f-planning-depth").value || "detail";
-  const phaseErrors = planningDepth === "detail" ? phasePlanIssues({ phasePlan: editPhasePlan, currentPhaseKey }) : [];
+  const currentPhaseKey = canonicalPhaseKey($("#f-phase").value || "anlass");
+  const planningDepth = currentEditorDepth();
+  const isBuildProject = $("#f-kind").value === "Bauprojekt";
+  const phaseErrors = planningDepth === "detail" && isBuildProject
+    ? phasePlanIssues({ phasePlan: editPhasePlan, currentPhaseKey })
+    : [];
   const editorErrors = validateProjectEditors();
   if (phaseErrors.length || editorErrors.length) {
     const message = phaseErrors[0] || editorErrors[0];
@@ -1632,11 +1644,11 @@ $("#project-form").addEventListener("submit", event => {
       ? "phases"
       : message.startsWith("Finanzen")
         ? "money"
-        : message.startsWith("Phasentor")
+        : (message.startsWith("Tor ") || message.startsWith("Phasentor"))
           ? "gates"
-          : (message.includes("Verantwortung") || message.includes("Ressourcenbedarf"))
-            ? "phases"
-            : "resources";
+          : message.includes("Ressource")
+            ? "resources"
+            : "base";
     setFormTab(targetTab);
     return;
   }
@@ -1648,8 +1660,11 @@ $("#project-form").addEventListener("submit", event => {
     object: $("#f-object").value.trim(),
     measure: $("#f-measure").value.trim(),
     kind: $("#f-kind").value,
+    horizonStartYear: Number($("#f-horizon-start").value) || CURRENT_YEAR,
+    horizonDurationYears: Number($("#f-horizon-duration").value) || 1,
     planningDepth,
     roughFinanceK: $("#f-rough-finance").value,
+    projectOrderStatus: isBuildProject ? $("#f-project-order").value : "nicht erforderlich",
     currentPhaseKey,
     currentAssignee: "",
     nextDecision: $("#f-next").value.trim(),
@@ -1671,9 +1686,10 @@ $("#project-form").addEventListener("submit", event => {
   selectedId = id;
   save(existing ? "Projektplanung geändert" : "Projekt erstellt");
   $("#project-dialog").close();
-  const warningShown = focusProjectResourceWarning(project);
+  const warningShown = effectivePlanningDepth(project) === "detail" ? focusProjectResourceWarning(project) : false;
   if (!warningShown) toast("Projektplanung gespeichert");
 });
+
 $("#delete-project").addEventListener("click", () => {
   const id = $("#project-id").value;
   const project = projects().find(item => item.id === id);
