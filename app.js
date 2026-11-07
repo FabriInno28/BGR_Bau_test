@@ -553,7 +553,9 @@ function resourceGroups() {
   return [...map.values()].sort((a, b) => a.name.localeCompare(b.name, "de"));
 }
 function allPhaseDemands() {
-  return projects().flatMap(project => project.demands.flatMap(demand => {
+  return projects().flatMap(project => {
+    if (effectivePlanningDepth(project) !== "detail") return [];
+    return project.demands.flatMap(demand => {
     const phase = project.phasePlan.find(item => item.phaseKey === demand.phaseKey);
     if (phase?.status === "none") return [];
     const window = phaseMonthWindow(phase, CURRENT_MONTH);
@@ -569,7 +571,8 @@ function allPhaseDemands() {
       phase,
       demand
     }];
-  }));
+  });
+  });
 }
 function assessmentForResource(key) {
   return assessResourceCapacity({
@@ -720,7 +723,7 @@ function renderResourceOverview() {
     return;
   }
 
-  const entries = projects().map(projectResourceOverview)
+  const entries = projects().filter(project => effectivePlanningDepth(project) === "detail").map(projectResourceOverview)
     .filter(entry => !actionOnly || entry.status !== "ok")
     .sort((a,b) => RESOURCE_SEVERITY[b.status] - RESOURCE_SEVERITY[a.status] || a.project.object.localeCompare(b.project.object,"de"));
   container.innerHTML = entries.length ? `<div class="resource-overview-list">${entries.map(entry => `<article class="resource-overview-row project-summary ${entry.status}" data-edit-project="${esc(entry.project.id)}">
@@ -884,33 +887,56 @@ function renderDetail() {
     $("#project-detail").innerHTML = '<div class="empty-note">Noch kein Projekt vorhanden.</div>';
     return;
   }
+
   const issues = projectIssues(project);
-  const planned = plannedPhases(project);
-  const latestGate = project.gateHistory.slice().sort((a, b) => String(b.date).localeCompare(String(a.date)))[0];
-  const resources = project.demands.filter(demand => project.phasePlan.find(row => row.phaseKey === demand.phaseKey)?.status !== "none").slice(0, 4);
-  const bk = project.roles?.bk && String(project.roles.bk).toLowerCase() !== "offen" ? project.roles.bk : "";
-  const resourceCost = projectResourceCostMeta(project);
+  const depthKey = effectivePlanningDepth(project);
   const depth = planningDepthInfo(project);
-  $("#project-detail").innerHTML = `<div class="project-cover"><div class="meta"><span>${esc(project.kind)} · ${esc(depth.short)} · ${state.mode === "scenario" ? "Szenario" : "scharfer Stand"}</span><span class="status-chip">${issues.length ? `${issues.length} Punkte offen` : "Plan prüfbar"}</span></div><h3>${esc(project.object)}</h3><p>${esc(project.measure)}</p></div>
+  const isBuildProject = project.kind === "Bauprojekt";
+  const bk = project.roles?.bk && String(project.roles.bk).toLowerCase() !== "offen" ? project.roles.bk : "";
+  const start = projectFirstPlannedYear(project);
+  const duration = Number(project.horizonDurationYears) || 1;
+  const end = start ? start + duration - 1 : null;
+  const roughFinance = nullableNumberValue(project.roughFinanceK) != null ? num(project.roughFinanceK) * 1000 : rawMotherCost(project);
+
+  if (depthKey !== "detail") {
+    $("#project-detail").innerHTML = `<div class="project-cover"><div class="meta"><span>${esc(project.kind)} · ${esc(depth.label)} · ${state.mode === "scenario" ? "Szenario" : "scharfer Stand"}</span><span class="status-chip">${issues.length ? `${issues.length} Punkte offen` : "im Blick"}</span></div><h3>${esc(project.object)}</h3><p>${esc(project.measure)}</p></div>
+      <div class="project-body">
+        <div class="horizon-focus ${depthKey}"><span>${depthKey === "medium" ? "Vorausschau · 4–10 Jahre" : "Perspektive · 11–30 Jahre"}</span><strong>${start ? `${start}${end && end !== start ? `–${end}` : ""}` : "Zeitraum offen"}</strong><small>${esc(depth.description)}</small></div>
+        <div class="perspectives"><div class="perspective"><span>Projektstart</span><strong>${start || "offen"}</strong></div><div class="perspective"><span>Dauer</span><strong>${duration} J.</strong></div><div class="perspective"><span>Grobe Kosten</span><strong>${roughFinance ? chf(roughFinance, true) : "offen"}</strong></div><div class="perspective"><span>Zielgenauigkeit</span><strong>${esc(depth.accuracy)}</strong></div></div>
+        <div class="next-box"><span>Nächster Prüfpunkt</span><strong>${esc(project.nextDecision || "noch offen")}</strong><small>Detailplanung startet automatisch, sobald das Vorhaben in das rollende 3 Jahres Fenster rückt.</small></div>
+        ${issues.length ? `<div class="issue-list">${issues.slice(0, 5).map(issue => `<span>${esc(issue)}</span>`).join("")}</div>` : ""}
+        <div class="project-actions"><button class="button primary" data-edit-project="${esc(project.id)}">Vorausschau bearbeiten</button></div>
+        ${changedProject(project) && state.mode === "sharp" ? `<button class="restore-link" data-restore="${esc(project.id)}">Planung auf Stand Mutterliste zurücksetzen</button>` : ""}
+      </div>`;
+    return;
+  }
+
+  const planned = plannedPhases(project);
+  const latestGate = project.gateHistory.filter(gate => gate.gateKey && !gate.legacyGate).slice().sort((a, b) => String(b.date).localeCompare(String(a.date)))[0];
+  const resources = project.demands.filter(demand => project.phasePlan.find(row => row.phaseKey === demand.phaseKey)?.status !== "none").slice(0, 4);
+  const resourceCost = projectResourceCostMeta(project);
+
+  $("#project-detail").innerHTML = `<div class="project-cover"><div class="meta"><span>${esc(project.kind)} · Planung 1–3 Jahre · ${state.mode === "scenario" ? "Szenario" : "scharfer Stand"}</span><span class="status-chip">${issues.length ? `${issues.length} Punkte offen` : "Plan prüfbar"}</span></div><h3>${esc(project.object)}</h3><p>${esc(project.measure)}</p></div>
     <div class="project-body">
-      <div class="mother-current"><span>Mutterstand ${DATA_STAND_LABEL}</span><strong>${esc(phaseInfo(project.motherPhaseKey).label)}</strong><small>${project.uncertain ? "Quelle als unsicher markiert · " : ""}${bk ? `Vertretung Allgemeine Baukommission: ${esc(bk)}` : "Vertretung Allgemeine Baukommission offen"}</small></div>
-      <div class="next-box"><span>Phasentor</span><strong>${esc(latestGate?.status || "noch kein Entscheid erfasst")}</strong><small>${latestGate ? `${esc(phaseInfo(latestGate.phaseKey).label)} · ${esc(latestGate.authority)} · ${esc(latestGate.date)}` : "Im Projekt planen oder protokollieren"}</small></div>
-      <span class="section-label">Alle Projektphasen</span>
+      <div class="mother-current"><span>Mutterstand ${DATA_STAND_LABEL}</span><strong>${esc(phaseInfo(project.motherPhaseKey).label)}</strong><small>${project.uncertain ? "Quelle als unsicher markiert · " : ""}${isBuildProject ? (bk ? `Vertretung Allgemeine Baukommission: ${esc(bk)}` : "Vertretung Allgemeine Baukommission offen") : "Operative Verantwortung: Geschäftsstelle"}</small></div>
+      ${isBuildProject ? `<div class="next-box"><span>Formelles Phasentor</span><strong>${esc(latestGate?.status || "noch kein Vorstandsentscheid erfasst")}</strong><small>${latestGate ? `${esc(gateDefinition(latestGate.gateKey).label)} · Gesamtvorstand · ${esc(latestGate.date)}` : "Drei formelle Tore gemäss Bauhandbuch"}</small></div>
+      <span class="section-label">Sechs Bauphasen gemäss Bauhandbuch</span>
       <div class="phase-steps">${PHASES.map(phase => {
         const row = project.phasePlan.find(item => item.phaseKey === phase.key);
         if (row?.status === "none") return `<button class="phase-step ${phase.className} no-activity" title="${esc(phase.label)} · Keine Tätigkeit" aria-label="${esc(phase.label)}: Keine Tätigkeit"></button>`;
         const resourceStatus = row?.startQuarter ? phaseResourceStatus(project, phase.key) : "open";
         const hasDemand = project.demands.some(demand => demand.phaseKey === phase.key);
         const statusText = hasDemand ? RESOURCE_STATUS[resourceStatus].label : "Ressourcenbedarf offen";
-        return `<button class="phase-step ${phase.className} resource-${resourceStatus} ${row?.startQuarter ? "done" : ""} ${phase.key === project.currentPhaseKey ? "current" : ""}" title="${esc(phase.label)} · ${row?.startQuarter ? `${qLabel(row.startQuarter)} bis ${qLabel(row.endQuarter)} · ${statusText}` : "noch nicht geplant"}" aria-label="${esc(phase.label)}: ${esc(statusText)}"></button>`;
-      }).join("")}</div>
-      <div class="perspectives"><div class="perspective"><span>Phasen geplant</span><strong>${planned.length} von ${project.phasePlan.filter(row => row.status !== "none").length}</strong></div><div class="perspective"><span>Ressourcenkosten</span><strong>${resourceCost.total ? chf(resourceCost.total, true) : "offen"}</strong></div><div class="perspective"><span>Freigegeben / gebunden</span><strong>${chf(securedCost(project), true)}</strong></div><div class="perspective"><span>Offene Punkte</span><strong>${issues.length}</strong></div></div>
-      <div class="finance-project-note ${project.finances.length ? "" : "open"}"><strong>${project.finances.length ? "Finanzplanung erfasst" : "Finanzen noch nicht erfasst"}</strong><span>${project.finances.length ? "Die Jahressicht ist im Bereich Finanzen sichtbar." : "Hinweis: Das blockiert weder Planung noch Freigabe."}</span></div>
+        const closeState = phaseCloseState(row);
+        return `<button class="phase-step ${phase.className} resource-${resourceStatus} close-${closeState} ${row?.startQuarter ? "done" : ""} ${phase.key === project.currentPhaseKey ? "current" : ""}" title="${esc(phase.label)} · ${row?.startQuarter ? `${qLabel(row.startQuarter)} bis ${qLabel(row.endQuarter)} · ${statusText}` : "noch nicht geplant"}" aria-label="${esc(phase.label)}: ${esc(statusText)}"></button>`;
+      }).join("")}</div>` : `<div class="next-box"><span>Unterhaltsprojekt</span><strong>Operative Führung durch die Geschäftsstelle</strong><small>Keine formellen Vorstandstore gemäss Bauhandbuch.</small></div>`}
+      <div class="perspectives"><div class="perspective"><span>${isBuildProject ? "Phasen geplant" : "Planungshorizont"}</span><strong>${isBuildProject ? `${planned.length} von ${project.phasePlan.filter(row => row.status !== "none").length}` : "1–3 Jahre"}</strong></div><div class="perspective"><span>Ressourcenkosten</span><strong>${resourceCost.total ? chf(resourceCost.total, true) : "offen"}</strong></div><div class="perspective"><span>Freigegeben / gebunden</span><strong>${chf(securedCost(project), true)}</strong></div><div class="perspective"><span>Offene Punkte</span><strong>${issues.length}</strong></div></div>
+      <div class="finance-project-note ${project.finances.length ? "" : "open"}"><strong>${project.finances.length ? "Finanzplanung erfasst" : "Finanzen noch nicht erfasst"}</strong><span>${project.finances.length ? "Die Jahressicht ist im Bereich Finanzen sichtbar." : "Detailplanung im 3 Jahres Fenster noch offen."}</span></div>
       <span class="section-label">Ressourcen dieses Projekts</span>
       <div class="mini-resources">${resources.length ? resources.map(demand => {
         const item = allPhaseDemands().find(entry => entry.id === demand.id);
         const status = item ? demandStatus(item) : "open";
-        const statusLabel = item?.past ? "Vergangene Phase, nicht mehr geprüft" : RESOURCE_STATUS[status].label;
+        const statusLabel = item?.past && nullableNumberValue(demand.remainingPt) > 0 ? "Phase abgelaufen, Restbedarf offen" : item?.past ? "Vergangene Phase" : RESOURCE_STATUS[status].label;
         return `<div class="mini-resource ${status}"><div><strong>${esc(demand.name)}</strong><span>${phaseInfo(demand.phaseKey).label} · ${esc(statusLabel)}</span></div><b>${nullableNumberValue(demand.remainingPt) == null ? "offen" : `${num(demand.remainingPt)} PT`}</b></div>`;
       }).join("") : '<div class="empty-note">Noch kein Ressourcenbedarf eingetragen.</div>'}</div>
       ${issues.length ? `<div class="issue-list">${issues.slice(0, 5).map(issue => `<span>${esc(issue)}</span>`).join("")}</div>` : ""}
@@ -978,36 +1004,50 @@ function renderResources() {
   renderResourceOverview();
 }
 function allFinanceEntries() {
-  return projects().flatMap(project => project.finances.map(item => ({ ...item, projectId: project.id, object: project.object })));
+  return projects()
+    .filter(project => effectivePlanningDepth(project) === "detail")
+    .flatMap(project => project.finances.map(item => ({ ...item, projectId: project.id, object: project.object })));
 }
 function costForYears(years, statuses = null) {
   return allFinanceEntries().filter(item => years.includes(Number(item.year)) && (!statuses || statuses.includes(item.status))).reduce((sum, item) => sum + num(item.amount), 0);
 }
+function roughCostForDepth(depth) {
+  return projects()
+    .filter(project => effectivePlanningDepth(project) === depth)
+    .reduce((sum, project) => {
+      const rough = nullableNumberValue(project.roughFinanceK);
+      return sum + (rough == null ? rawMotherCost(project) : rough * 1000);
+    }, 0);
+}
 function renderFinance() {
-  const withFinance = projects().filter(project => project.finances.length > 0).length;
-  const withoutFinance = projects().length - withFinance;
-  $("#finance-coverage").innerHTML = `<strong>${withFinance} Projekte mit Finanzplanung</strong><span>${withoutFinance} Projekte ohne Finanzplanung · Hinweis, keine Freigabesperre</span>`;
+  const detailedProjects = projects().filter(project => effectivePlanningDepth(project) === "detail");
+  const withFinance = detailedProjects.filter(project => project.finances.length > 0).length;
+  const withoutFinance = detailedProjects.length - withFinance;
+  $("#finance-coverage").innerHTML = `<strong>${withFinance} von ${detailedProjects.length} Projekten im 3 Jahres Fenster mit Finanzplanung</strong><span>${withoutFinance} Detailprojekte ohne Finanzplanung · Vorausschau und Perspektive werden nur mit groben Kosten geführt.</span>`;
   $("#finance-coverage").classList.toggle("complete", withoutFinance === 0);
-  const horizons = [
-    { label: "0 bis 1 Jahr", years: [CURRENT_YEAR, CURRENT_YEAR + 1] },
-    { label: "2 bis 3 Jahre", years: [CURRENT_YEAR + 2, CURRENT_YEAR + 3] },
-    { label: "4 bis 10 Jahre", years: Array.from({ length: 7 }, (_, index) => CURRENT_YEAR + 4 + index) }
-  ];
-  $("#finance-horizons").innerHTML = horizons.map(horizon => {
-    const secured = costForYears(horizon.years, ["approved", "bound"]);
-    const bound = costForYears(horizon.years, ["bound"]);
-    const planning = costForYears(horizon.years, ["estimate", "budgeted"]);
-    return `<article><span>${horizon.label}</span><strong>${chf(secured, true)}</strong><small>freigegeben und gebunden</small><div><b>${chf(bound, true)}</b> gebunden · <b>${chf(planning, true)}</b> Planung</div></article>`;
-  }).join("");
-  const totals = YEARS.map(year => Object.fromEntries(COST_STATUSES.map(status => [status.key, costForYears([year], [status.key])])));
+
+  const detailYears = Array.from({ length: 4 }, (_, index) => CURRENT_YEAR + index);
+  const secured = costForYears(detailYears, ["approved", "bound"]);
+  const bound = costForYears(detailYears, ["bound"]);
+  const planning = costForYears(detailYears, ["estimate", "budgeted"]);
+  const mediumRough = roughCostForDepth("medium");
+  const lightRough = roughCostForDepth("light");
+
+  $("#finance-horizons").innerHTML = [
+    `<article><span>Planung · 1–3 Jahre</span><strong>${chf(secured, true)}</strong><small>freigegeben und gebunden · Zielgenauigkeit ±15 %</small><div><b>${chf(bound, true)}</b> gebunden · <b>${chf(planning, true)}</b> Planung</div></article>`,
+    `<article><span>Vorausschau · 4–10 Jahre</span><strong>${mediumRough ? chf(mediumRough, true) : "–"}</strong><small>grobe Kostenordnung · Zielgenauigkeit ±25 %</small><div>Keine Detailfinanzplanung</div></article>`,
+    `<article><span>Perspektive · 11–30 Jahre</span><strong>${lightRough ? chf(lightRough, true) : "–"}</strong><small>grobe Kostenordnung · Zielgenauigkeit ±50 %</small><div>Keine Detailfinanzplanung</div></article>`
+  ].join("");
+
+  const chartYears = detailYears;
+  const totals = chartYears.map(year => Object.fromEntries(COST_STATUSES.map(status => [status.key, costForYears([year], [status.key])])));
   const max = Math.max(1, ...totals.map(total => Object.values(total).reduce((a, b) => a + b, 0)));
-  $("#finance-chart").innerHTML = YEARS.map((year, index) => {
+  $("#finance-chart").innerHTML = chartYears.map((year, index) => {
     const total = Object.values(totals[index]).reduce((a, b) => a + b, 0);
     return `<div class="finance-year"><strong>${total ? chf(total, true) : "–"}</strong><div class="finance-stack" style="height:${total / max * 88}%">${COST_STATUSES.map(status => `<i class="${status.className}" style="height:${total ? totals[index][status.key] / total * 100 : 0}%" title="${status.label}: ${chf(totals[index][status.key])}"></i>`).join("")}</div><span>${year}</span></div>`;
   }).join("");
   $("#finance-legend").innerHTML = COST_STATUSES.map(status => `<span><i class="${status.className}"></i>${status.label}</span>`).join("");
 }
-
 function quarterOptions(selected, blank = true) {
   return `${blank ? '<option value="">noch offen</option>' : ""}${ALL_QUARTERS.map(quarter => `<option value="${quarter}" ${quarter === selected ? "selected" : ""}>${qLabel(quarter)}</option>`).join("")}`;
 }
