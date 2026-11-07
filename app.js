@@ -139,17 +139,16 @@ function phaseFromLegacy(value) {
   if (text.includes("21")) return "machbarkeit";
   if (text.includes("PW")) return "planerwahl";
   if (/31|32|33/.test(text)) return "planung";
-  if (text.includes("41")) return "vergabe";
-  if (/51|52/.test(text)) return "realisierung";
+  if (/41|51|52/.test(text)) return "ausfuehrung";
   if (text.includes("53")) return "abschluss";
-  if (text.includes("U")) return "realisierung";
+  if (text.includes("U")) return "ausfuehrung";
   return "anlass";
 }
 function inferKind(project) {
   const text = `${project.measure} ${project.object}`.toLowerCase();
-  return project.phase?.includes("U") || (/küchengeräte|fernwärmeanschluss|einfache badsanierung|kurzfristige unterhalt/.test(text) && project.currentOwner === "Geschäftsstelle")
-    ? "Kleinprojekt"
-    : "Bauprojekt";
+  const simpleOfficeProject = project.currentOwner === "Geschäftsstelle"
+    && /küchengeräte|fernwärmeanschluss|einfache badsanierung|kurzfristige unterhalt|werterhaltung/.test(text);
+  return project.phase?.includes("U") || simpleOfficeProject ? "Unterhaltsprojekt" : "Bauprojekt";
 }
 function inferRoles(project) {
   return {
@@ -159,55 +158,89 @@ function inferRoles(project) {
     bhb: canonicalResourceName(project.roles?.bhb || (["Büro 8", "Tresto", "TRESTO", "andere externe Partner"].includes(project.projectManagement) ? project.projectManagement : "")) || "offen"
   };
 }
+function emptyCloseReview(review = {}) {
+  return {
+    goal: review.goal || "",
+    result: review.result || "",
+    organization: review.organization || "",
+    resources: review.resources || "",
+    changes: review.changes || "",
+    date: review.date || "",
+    note: review.note || ""
+  };
+}
 function defaultPhasePlan(currentKey) {
-  const current = phaseIndex(currentKey);
+  const current = phaseIndex(canonicalPhaseKey(currentKey));
   return PHASES.map((phase, index) => ({
     phaseKey: phase.key,
     status: index < current ? "done" : index === current ? "current" : "open",
     startQuarter: "",
-    endQuarter: ""
+    endQuarter: "",
+    closeReview: emptyCloseReview()
   }));
 }
 function rawMotherCost(project) {
   const known = (project.cashflow || []).filter(item => item.status === "bekannt").reduce((sum, item) => sum + num(item.amount), 0);
   return known || num(project.cost);
 }
+function derivedStartYear(project) {
+  const direct = Number(project.horizonStartYear || project.startYear);
+  if (Number.isInteger(direct)) return direct;
+  const phaseYears = (project.phasePlan || [])
+    .map(row => Number(String(row.startQuarter || "").slice(0,4)))
+    .filter(Number.isInteger);
+  return phaseYears.length ? Math.min(...phaseYears) : CURRENT_YEAR;
+}
+function derivedDurationYears(project, startYear) {
+  const direct = Number(project.horizonDurationYears);
+  if (Number.isFinite(direct) && direct > 0) return direct;
+  const endYear = Number(project.endYear);
+  if (Number.isInteger(endYear) && Number.isInteger(startYear)) return Math.max(1, endYear - startYear + 1);
+  return 1;
+}
 function normalizeProject(project) {
-  const motherPhaseKey = project.motherPhaseKey || phaseFromLegacy(project.phase);
-  const currentPhaseKey = project.currentPhaseKey || project.phaseKey || motherPhaseKey;
   const migrated = migrateState({ projects: [project] }).projects[0];
+  const motherPhaseKey = canonicalPhaseKey(migrated.motherPhaseKey || project.motherPhaseKey || phaseFromLegacy(project.phase));
+  const currentPhaseKey = canonicalPhaseKey(migrated.currentPhaseKey || project.currentPhaseKey || project.phaseKey || motherPhaseKey);
   const fallback = defaultPhasePlan(currentPhaseKey);
   const sourceRows = migrated.phasePlan?.length ? migrated.phasePlan : fallback;
   const phasePlan = PHASES.map((phase, index) => {
-    const source = sourceRows.find(row => row.phaseKey === phase.key) || fallback[index];
+    const source = sourceRows.find(row => canonicalPhaseKey(row.phaseKey) === phase.key) || fallback[index];
     let status = ["open", "planned", "current", "done", "none"].includes(source?.status) ? source.status : fallback[index].status;
     if (phase.key === currentPhaseKey && status === "none") status = "current";
     return {
       phaseKey: phase.key,
       status,
       startQuarter: status === "none" ? "" : (source?.startQuarter || ""),
-      endQuarter: status === "none" ? "" : (source?.endQuarter || "")
+      endQuarter: status === "none" ? "" : (source?.endQuarter || ""),
+      closeReview: emptyCloseReview(source?.closeReview)
     };
   });
   const roles = inferRoles({ ...project, roles: project.roles || migrated.roles });
+  const horizonStartYear = derivedStartYear({ ...project, phasePlan });
+  const horizonDurationYears = derivedDurationYears(project, horizonStartYear);
+  const planningDepth = planningHorizon(horizonStartYear, CURRENT_YEAR);
+  const rawKind = migrated.kind || project.kind;
+  const kind = rawKind === "Kleinprojekt" ? "Unterhaltsprojekt"
+    : ["Unterhaltsprojekt", "Bauprojekt"].includes(rawKind) ? rawKind
+    : project.category === "Bauprojekt" ? "Bauprojekt" : inferKind(project);
   return {
     ...clone(project),
     ...migrated,
-    kind: ["Kleinprojekt", "Bauprojekt"].includes(project.kind)
-      ? project.kind
-      : project.category === "Bauprojekt"
-        ? "Bauprojekt"
-        : inferKind(project),
+    kind,
     motherPhaseKey,
     currentPhaseKey,
     currentAssignee: "",
     motherQuarter: project.motherQuarter || BASELINE_QUARTER,
     roles,
     phasePlan,
-    planningDepth: ["detail", "medium", "light"].includes(project.planningDepth) ? project.planningDepth : "detail",
-    roughFinanceK: project.roughFinanceK ?? "",
+    horizonStartYear,
+    horizonDurationYears,
+    planningDepth,
+    roughFinanceK: project.roughFinanceK ?? (planningDepth !== "detail" && rawMotherCost(project) ? String(rawMotherCost(project) / 1000) : ""),
+    projectOrderStatus: project.projectOrderStatus || (kind === "Bauprojekt" ? "offen" : "nicht erforderlich"),
     finances: Array.isArray(migrated.finances) ? migrated.finances : [],
-    gateHistory: Array.isArray(project.gateHistory) ? project.gateHistory : []
+    gateHistory: Array.isArray(migrated.gateHistory) ? migrated.gateHistory : []
   };
 }
 const BASELINE = BASELINE_PROJECTS.map(normalizeProject);
@@ -440,12 +473,13 @@ function securedCost(project) {
   return project.finances.filter(item => ["approved", "bound"].includes(item.status)).reduce((sum, item) => sum + num(item.amount), 0);
 }
 const PLANNING_DEPTHS = {
-  detail: { label: "1–3 Jahre · detailliert", short: "1–3 Jahre", description: "Vollständige Planung mit Phasen, Rollen, Ressourcen, Kapazitäten, Finanzen und Phasentoren." },
-  medium: { label: "4–10 Jahre · Grobplanung", short: "4–10 Jahre", description: "Grobe Phasen-, Rollen-, Ressourcen- und Finanzplanung. Details dürfen offen bleiben." },
-  light: { label: "+10 Jahre · Perspektive", short: "+10 Jahre", description: "Strategische Perspektive mit Vorhaben, grobem Horizont, Grössenordnung und nächstem Prüfpunkt." }
+  detail: { label: "Planung · nächste 1–3 Jahre", short: "1–3 Jahre", accuracy: "±15 %", description: "Handbuch: Phasen und Phasentore festlegen, Rollen und Verantwortlichkeiten zuweisen, Personalbedarf und Kosten detailliert planen." },
+  medium: { label: "Vorausschau · Jahre 4–10", short: "4–10 Jahre", accuracy: "±25 %", description: "Handbuch: Vorbereitung, Planung und Ausführung zeitlich grob einordnen. Keine detaillierte Ressourcen- oder Phasentorplanung." },
+  light: { label: "Perspektive · Jahre 11–30", short: "11–30 Jahre", accuracy: "±50 %", description: "Handbuch: möglichen Projektstart, voraussichtliche Projektdauer und grobe Kosten abschätzen." }
 };
 function planningDepthInfo(project) {
-  return PLANNING_DEPTHS[project?.planningDepth] || PLANNING_DEPTHS.detail;
+  const depth = planningHorizon(project?.horizonStartYear || project?.startYear, CURRENT_YEAR);
+  return PLANNING_DEPTHS[depth] || PLANNING_DEPTHS.detail;
 }
 function demandHours(demand) {
   const pt = nullableNumberValue(demand?.remainingPt);
@@ -761,6 +795,8 @@ function renderTimeline() {
   renderLongHorizon();
 }
 function projectFirstPlannedYear(project) {
+  const direct = Number(project.horizonStartYear || project.startYear);
+  if (Number.isInteger(direct)) return direct;
   const years = project.phasePlan
     .filter(row => row.status !== "none" && row.startQuarter)
     .map(row => Number(String(row.startQuarter).slice(0, 4)))
@@ -768,11 +804,7 @@ function projectFirstPlannedYear(project) {
   return years.length ? Math.min(...years) : null;
 }
 function effectivePlanningDepth(project) {
-  if (project.planningDepth === "medium" || project.planningDepth === "light") return project.planningDepth;
-  const year = projectFirstPlannedYear(project);
-  if (year != null && year > CURRENT_YEAR + 10) return "light";
-  if (year != null && year > CURRENT_YEAR + 3) return "medium";
-  return "detail";
+  return planningHorizon(projectFirstPlannedYear(project), CURRENT_YEAR);
 }
 function renderLongHorizon() {
   $("#long-horizon").classList.toggle("hidden", !longOpen);
