@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 9;
+export const SCHEMA_VERSION = 10;
 
 // Personen erhalten bestätigte Projektkapazitäten; die Gruppe ist nur offener Bedarf.
 export const OFFICE_PEOPLE = ["Roli", "Mark", "Stefan"];
@@ -17,6 +17,74 @@ export const CAPACITY_RESOURCES = [
 export const DEMAND_RESOURCES = [...CAPACITY_RESOURCES, OFFICE_UNASSIGNED];
 // Verantwortung ist von der verfügbaren Kapazität getrennt.
 export const ROLE_OPTIONS = [...CAPACITY_RESOURCES, "Geschäftsstelle", "BK", "BHB"];
+
+export const HANDBOOK_PHASE_KEYS = ["anlass", "machbarkeit", "planerwahl", "planung", "ausfuehrung", "abschluss"];
+export const HANDBOOK_GATE_KEYS = ["tor1", "tor2", "tor3"];
+
+export function canonicalPhaseKey(value) {
+  const key = String(value || "").trim();
+  if (key === "vergabe" || key === "realisierung" || key === "ausfuehrung") return "ausfuehrung";
+  if (HANDBOOK_PHASE_KEYS.includes(key)) return key;
+  return key || "anlass";
+}
+
+export function planningHorizon(startYear, currentYear = new Date().getFullYear()) {
+  const year = Number(startYear);
+  if (!Number.isInteger(year)) return "detail";
+  if (year <= Number(currentYear) + 3) return "detail";
+  if (year <= Number(currentYear) + 10) return "medium";
+  return "light";
+}
+
+function defaultCloseReview(review = {}) {
+  return {
+    goal: review.goal || "",
+    result: review.result || "",
+    organization: review.organization || "",
+    resources: review.resources || "",
+    changes: review.changes || "",
+    date: review.date || "",
+    note: review.note || ""
+  };
+}
+
+function mergePhaseRows(rows = []) {
+  const rank = { none: 0, open: 1, done: 2, planned: 3, current: 4 };
+  const grouped = new Map();
+  for (const original of rows) {
+    const row = { ...original, phaseKey: canonicalPhaseKey(original.phaseKey) };
+    const current = grouped.get(row.phaseKey);
+    if (!current) {
+      grouped.set(row.phaseKey, { ...row, closeReview: defaultCloseReview(row.closeReview) });
+      continue;
+    }
+    const starts = [current.startQuarter, row.startQuarter].filter(Boolean).sort((a,b)=>quarterIndex(a)-quarterIndex(b));
+    const ends = [current.endQuarter, row.endQuarter].filter(Boolean).sort((a,b)=>quarterIndex(b)-quarterIndex(a));
+    const preferred = (rank[row.status] ?? 0) > (rank[current.status] ?? 0) ? row : current;
+    grouped.set(row.phaseKey, {
+      ...current,
+      ...preferred,
+      phaseKey: row.phaseKey,
+      startQuarter: starts[0] || "",
+      endQuarter: ends[0] || "",
+      closeReview: defaultCloseReview(preferred.closeReview || current.closeReview)
+    });
+  }
+  return [...grouped.values()];
+}
+
+function migrateGateEntry(gate = {}) {
+  const phaseKey = canonicalPhaseKey(gate.phaseKey || "");
+  const mapped = gate.gateKey
+    || (phaseKey === "machbarkeit" ? "tor1" : phaseKey === "planung" ? "tor2" : phaseKey === "abschluss" ? "tor3" : "");
+  return {
+    ...gate,
+    gateKey: HANDBOOK_GATE_KEYS.includes(mapped) ? mapped : "",
+    phaseKey,
+    authority: mapped ? "Gesamtvorstand" : (gate.authority || ""),
+    legacyGate: !HANDBOOK_GATE_KEYS.includes(mapped)
+  };
+}
 
 export function clone(value) {
   return JSON.parse(JSON.stringify(value));
@@ -43,11 +111,11 @@ export function resourceKey(name) {
 }
 
 export function migratePhaseResponsibilities(project = {}) {
-  const currentPhaseKey = project.currentPhaseKey || project.phaseKey || "";
+  const currentPhaseKey = canonicalPhaseKey(project.currentPhaseKey || project.phaseKey || "");
   const formerCurrentAssignee = canonicalResourceName(
     project.currentAssignee || project.currentOwner || project.bgrResponsibility || ""
   );
-  const phasePlan = Array.isArray(project.phasePlan) ? project.phasePlan : [];
+  const phasePlan = mergePhaseRows(Array.isArray(project.phasePlan) ? project.phasePlan : []);
 
   return phasePlan.map(row => {
     const migratedAssignee = canonicalResourceName(
@@ -55,11 +123,12 @@ export function migratePhaseResponsibilities(project = {}) {
     );
     return {
       ...row,
+      phaseKey: canonicalPhaseKey(row.phaseKey),
+      closeReview: defaultCloseReview(row.closeReview),
       assignee: ROLE_OPTIONS.includes(migratedAssignee) ? migratedAssignee : ""
     };
   });
 }
-
 export function canonicalResourceName(value) {
   const raw = String(value || "").trim();
   const aliases = {
@@ -185,7 +254,7 @@ function migrateLegacyDemand(demand) {
       ...demand,
       id: demand.id || uuid("d"),
       name: canonicalDemandName(demand.name),
-      phaseKey: demand.phaseKey || "anlass",
+      phaseKey: canonicalPhaseKey(demand.phaseKey || "anlass"),
       remainingPt: demand.remainingPt ?? demand.pt ?? "",
       hoursPerPt: demand.hoursPerPt ?? 8,
       hourlyRate: demand.hourlyRate ?? ""
@@ -198,7 +267,7 @@ function migrateLegacyDemand(demand) {
   return {
     id: demand.id || uuid("d"),
     name: canonicalDemandName(demand.name),
-    phaseKey: demand.phaseKey || "anlass",
+    phaseKey: canonicalPhaseKey(demand.phaseKey || "anlass"),
     remainingPt: "",
     hoursPerPt: 8,
     hourlyRate: "",
@@ -236,19 +305,22 @@ export function migrateState(saved, baselineProjects = []) {
     scenarios: Array.isArray(source.scenarios) ? source.scenarios : [],
     projects: projects.map(project => {
       const phasePlan = migratePhaseResponsibilities(project);
-      const currentPhaseKey = project.currentPhaseKey || project.phaseKey || "";
+      const currentPhaseKey = canonicalPhaseKey(project.currentPhaseKey || project.phaseKey || "anlass");
       const currentAssignee = phasePlan.find(row => row.phaseKey === currentPhaseKey)?.assignee || "";
       return {
         ...project,
+        kind: project.kind === "Kleinprojekt" ? "Unterhaltsprojekt" : project.kind,
+        currentPhaseKey,
+        motherPhaseKey: canonicalPhaseKey(project.motherPhaseKey || project.phaseKey || currentPhaseKey),
         currentAssignee,
         phasePlan,
         demands: Array.isArray(project.demands) ? project.demands.map(migrateLegacyDemand) : [],
         finances: Array.isArray(project.finances)
           ? project.finances
           : (Array.isArray(project.phaseCosts)
-            ? project.phaseCosts.map(({ phaseKey, ...entry }) => ({ ...entry, legacyPhaseKey: phaseKey || "" }))
+            ? project.phaseCosts.map(({ phaseKey, ...entry }) => ({ ...entry, legacyPhaseKey: canonicalPhaseKey(phaseKey || "") }))
             : []),
-        gateHistory: Array.isArray(project.gateHistory) ? project.gateHistory : []
+        gateHistory: Array.isArray(project.gateHistory) ? project.gateHistory.map(migrateGateEntry) : []
       };
     }),
     capacities: (Array.isArray(source.capacities) ? source.capacities : []).map(migrateCapacity),
@@ -256,7 +328,6 @@ export function migrateState(saved, baselineProjects = []) {
     auditLog: Array.isArray(source.auditLog) ? source.auditLog : []
   };
 }
-
 export function validateDemand(demand) {
   const errors = [];
   const name = canonicalResourceName(demand.name);
@@ -282,32 +353,40 @@ export function validateFinanceEntry(entry) {
 
 export function validatePhaseTransitions({ phasePlan = [], gateHistory = [], currentPhaseKey = "" } = {}) {
   const issues = [];
-  const relevantPhases = phasePlan.filter(phase => phase?.status !== "none");
-  for (let index = 0; index < relevantPhases.length - 1; index += 1) {
-    const phase = relevantPhases[index];
-    const next = relevantPhases[index + 1];
-    const transitionRelevant = phase?.status === "done"
-      && phase.startQuarter
-      && phase.endQuarter
-      && (next?.startQuarter || next?.phaseKey === currentPhaseKey);
-    if (!transitionRelevant) continue;
+  const relevant = phasePlan.filter(phase => phase?.status !== "none");
+  const currentKey = canonicalPhaseKey(currentPhaseKey);
+  const definitions = [
+    { gateKey: "tor1", phaseKey: "machbarkeit", later: ["planerwahl", "planung", "ausfuehrung", "abschluss"] },
+    { gateKey: "tor2", phaseKey: "planung", later: ["ausfuehrung", "abschluss"] },
+    { gateKey: "tor3", phaseKey: "abschluss", later: [] }
+  ];
+
+  for (const definition of definitions) {
+    const phase = relevant.find(row => canonicalPhaseKey(row.phaseKey) === definition.phaseKey);
+    if (!phase || phase.status !== "done") continue;
+    const laterStarted = definition.gateKey === "tor3"
+      ? true
+      : relevant.some(row =>
+          definition.later.includes(canonicalPhaseKey(row.phaseKey))
+          && (["current", "planned", "done"].includes(row.status) || row.startQuarter || canonicalPhaseKey(row.phaseKey) === currentKey)
+        );
+    if (!laterStarted) continue;
 
     const latest = gateHistory
-      .filter(gate => gate.phaseKey === phase.phaseKey)
+      .filter(gate => (gate.gateKey || migrateGateEntry(gate).gateKey) === definition.gateKey)
       .slice()
       .sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")))[0];
 
     if (!latest || !["freigegeben", "mit Auflagen"].includes(latest.status)) {
-      issues.push({ phaseKey: phase.phaseKey, type: "notApproved" });
+      issues.push({ gateKey: definition.gateKey, phaseKey: definition.phaseKey, type: "notApproved" });
       continue;
     }
-    if (["machbarkeit", "planung"].includes(phase.phaseKey) && latest.authority !== "Gesamtvorstand") {
-      issues.push({ phaseKey: phase.phaseKey, type: "wrongAuthority", authority: latest.authority });
+    if (latest.authority && latest.authority !== "Gesamtvorstand") {
+      issues.push({ gateKey: definition.gateKey, phaseKey: definition.phaseKey, type: "wrongAuthority", authority: latest.authority });
     }
   }
   return issues;
 }
-
 function betterBottleneck(candidate, current) {
   if (!current) return true;
   if (candidate.utilization !== current.utilization) return candidate.utilization > current.utilization;
