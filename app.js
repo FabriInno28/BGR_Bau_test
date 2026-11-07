@@ -9,6 +9,7 @@ import {
   isOfficeUnassigned,
   SCHEMA_VERSION,
   assessResourceCapacity,
+  canonicalPhaseKey,
   canonicalResourceName,
   clone,
   csvSafe,
@@ -16,6 +17,7 @@ import {
   migrateState,
   nullableNumberValue,
   phaseMonthWindow,
+  planningHorizon,
   numberValue,
   quarterIndex,
   resourceKey,
@@ -26,13 +28,26 @@ import {
 } from "./model.js";
 
 const PHASES = [
-  { key: "anlass", label: "Anlass / Prüfauftrag", short: "Anlass", className: "p1" },
+  { key: "anlass", label: "Anlass & Prüfauftrag", short: "Anlass", className: "p1" },
   { key: "machbarkeit", label: "Machbarkeitsstudie", short: "Machbarkeit", className: "p2" },
-  { key: "planerwahl", label: "Planerwahl", short: "Planerwahl", className: "p3" },
-  { key: "planung", label: "Planung / Projektierung", short: "Planung", className: "p4" },
-  { key: "vergabe", label: "Ausschreibung / Vergabe", short: "Vergabe", className: "p5" },
-  { key: "realisierung", label: "Realisierung", short: "Realisierung", className: "p6" },
-  { key: "abschluss", label: "Abschluss / Übergabe", short: "Abschluss", className: "p7" }
+  { key: "planerwahl", label: "Auswahl der Planenden", short: "Planendenwahl", className: "p3" },
+  { key: "planung", label: "Planung & Projektierung", short: "Planung", className: "p4" },
+  { key: "ausfuehrung", label: "Ausschreibung & Ausführung", short: "Ausführung", className: "p5" },
+  { key: "abschluss", label: "Übergabe & Projektabschluss", short: "Abschluss", className: "p6" }
+];
+
+const FORMAL_GATES = [
+  { key: "tor1", label: "Tor 1", afterPhase: "machbarkeit", timing: "Nach der Machbarkeitsstudie", decision: "Strategische Ausrichtung bestätigen, Variante wählen sowie Auswahl der Planenden und Planungsauftrag freigeben." },
+  { key: "tor2", label: "Tor 2", afterPhase: "planung", timing: "Nach Planung & Projektierung", decision: "Über die Realisierung entscheiden und Kredit sowie Terminplan bewilligen." },
+  { key: "tor3", label: "Tor 3", afterPhase: "abschluss", timing: "Nach Übergabe & Projektabschluss", decision: "Bauabrechnung genehmigen und das Projekt formell abschliessen." }
+];
+
+const PHASE_CLOSE_FIELDS = [
+  { key: "goal", label: "Ziel", question: "Ist das Ziel weiterhin richtig und mit Immobilienstrategie und Portfolio abgestimmt?" },
+  { key: "result", label: "Ergebnis", question: "Sind die erforderlichen Unterlagen vollständig und entscheidungsreif?" },
+  { key: "organization", label: "Organisation", question: "Passt die Organisation zu Bedeutung, Risiken und Komplexität des Projekts?" },
+  { key: "resources", label: "Ressourcen", question: "Sind Finanzierung, Personal und Zeit für die nächste Phase gesichert?" },
+  { key: "changes", label: "Veränderungen", question: "Sind wesentliche Änderungen bei Kosten, Terminen, Risiken oder Abhängigkeiten berücksichtigt?" }
 ];
 
 const COST_STATUSES = [
@@ -43,7 +58,6 @@ const COST_STATUSES = [
 ];
 
 const GATE_STATUSES = ["geplant", "freigegeben", "mit Auflagen", "zurückgestellt", "gestoppt"];
-const GATE_AUTHORITIES = ["BK", "BHB", "Gesamtvorstand", "Geschäftsstelle"];
 const MONTH_NAMES = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"];
 const TODAY = new Date();
 const CURRENT_YEAR = TODAY.getFullYear();
@@ -71,13 +85,14 @@ const PHASE_STATUS = {
   done: "Abgeschlossen",
   none: "Keine Tätigkeit"
 };
-const STORE_KEY = "bgr-bauradar-v9";
-const PREVIOUS_STORE_KEY = "bgr-bauradar-v8";
-const OLDER_STORE_KEY = "bgr-bauradar-v7";
-const LEGACY_STORE_KEY = "bgr-bauradar-v5";
-const OLDEST_STORE_KEY = "bgr-bauradar-v4";
-const VERY_OLD_STORE_KEY = "bgr-portfolio-cockpit-v3";
-const HISTORY_KEY = "bgr-bauradar-v9-history";
+const STORE_KEY = "bgr-bauradar-v10";
+const PREVIOUS_STORE_KEY = "bgr-bauradar-v9";
+const OLDER_STORE_KEY = "bgr-bauradar-v8";
+const LEGACY_STORE_KEY = "bgr-bauradar-v7";
+const OLDEST_STORE_KEY = "bgr-bauradar-v5";
+const VERY_OLD_STORE_KEY = "bgr-bauradar-v4";
+const ANCIENT_STORE_KEY = "bgr-portfolio-cockpit-v3";
+const HISTORY_KEY = "bgr-bauradar-v10-history";
 
 const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
@@ -124,17 +139,16 @@ function phaseFromLegacy(value) {
   if (text.includes("21")) return "machbarkeit";
   if (text.includes("PW")) return "planerwahl";
   if (/31|32|33/.test(text)) return "planung";
-  if (text.includes("41")) return "vergabe";
-  if (/51|52/.test(text)) return "realisierung";
+  if (/41|51|52/.test(text)) return "ausfuehrung";
   if (text.includes("53")) return "abschluss";
-  if (text.includes("U")) return "realisierung";
+  if (text.includes("U")) return "ausfuehrung";
   return "anlass";
 }
 function inferKind(project) {
   const text = `${project.measure} ${project.object}`.toLowerCase();
-  return project.phase?.includes("U") || (/küchengeräte|fernwärmeanschluss|einfache badsanierung|kurzfristige unterhalt/.test(text) && project.currentOwner === "Geschäftsstelle")
-    ? "Kleinprojekt"
-    : "Bauprojekt";
+  const simpleOfficeProject = project.currentOwner === "Geschäftsstelle"
+    && /küchengeräte|fernwärmeanschluss|einfache badsanierung|kurzfristige unterhalt|werterhaltung/.test(text);
+  return project.phase?.includes("U") || simpleOfficeProject ? "Unterhaltsprojekt" : "Bauprojekt";
 }
 function inferRoles(project) {
   return {
@@ -144,55 +158,89 @@ function inferRoles(project) {
     bhb: canonicalResourceName(project.roles?.bhb || (["Büro 8", "Tresto", "TRESTO", "andere externe Partner"].includes(project.projectManagement) ? project.projectManagement : "")) || "offen"
   };
 }
+function emptyCloseReview(review = {}) {
+  return {
+    goal: review.goal || "",
+    result: review.result || "",
+    organization: review.organization || "",
+    resources: review.resources || "",
+    changes: review.changes || "",
+    date: review.date || "",
+    note: review.note || ""
+  };
+}
 function defaultPhasePlan(currentKey) {
-  const current = phaseIndex(currentKey);
+  const current = phaseIndex(canonicalPhaseKey(currentKey));
   return PHASES.map((phase, index) => ({
     phaseKey: phase.key,
     status: index < current ? "done" : index === current ? "current" : "open",
     startQuarter: "",
-    endQuarter: ""
+    endQuarter: "",
+    closeReview: emptyCloseReview()
   }));
 }
 function rawMotherCost(project) {
   const known = (project.cashflow || []).filter(item => item.status === "bekannt").reduce((sum, item) => sum + num(item.amount), 0);
   return known || num(project.cost);
 }
+function derivedStartYear(project) {
+  const direct = Number(project.horizonStartYear || project.startYear);
+  if (Number.isInteger(direct)) return direct;
+  const phaseYears = (project.phasePlan || [])
+    .map(row => Number(String(row.startQuarter || "").slice(0,4)))
+    .filter(Number.isInteger);
+  return phaseYears.length ? Math.min(...phaseYears) : CURRENT_YEAR;
+}
+function derivedDurationYears(project, startYear) {
+  const direct = Number(project.horizonDurationYears);
+  if (Number.isFinite(direct) && direct > 0) return direct;
+  const endYear = Number(project.endYear);
+  if (Number.isInteger(endYear) && Number.isInteger(startYear)) return Math.max(1, endYear - startYear + 1);
+  return 1;
+}
 function normalizeProject(project) {
-  const motherPhaseKey = project.motherPhaseKey || phaseFromLegacy(project.phase);
-  const currentPhaseKey = project.currentPhaseKey || project.phaseKey || motherPhaseKey;
   const migrated = migrateState({ projects: [project] }).projects[0];
+  const motherPhaseKey = canonicalPhaseKey(migrated.motherPhaseKey || project.motherPhaseKey || phaseFromLegacy(project.phase));
+  const currentPhaseKey = canonicalPhaseKey(migrated.currentPhaseKey || project.currentPhaseKey || project.phaseKey || motherPhaseKey);
   const fallback = defaultPhasePlan(currentPhaseKey);
   const sourceRows = migrated.phasePlan?.length ? migrated.phasePlan : fallback;
   const phasePlan = PHASES.map((phase, index) => {
-    const source = sourceRows.find(row => row.phaseKey === phase.key) || fallback[index];
+    const source = sourceRows.find(row => canonicalPhaseKey(row.phaseKey) === phase.key) || fallback[index];
     let status = ["open", "planned", "current", "done", "none"].includes(source?.status) ? source.status : fallback[index].status;
     if (phase.key === currentPhaseKey && status === "none") status = "current";
     return {
       phaseKey: phase.key,
       status,
       startQuarter: status === "none" ? "" : (source?.startQuarter || ""),
-      endQuarter: status === "none" ? "" : (source?.endQuarter || "")
+      endQuarter: status === "none" ? "" : (source?.endQuarter || ""),
+      closeReview: emptyCloseReview(source?.closeReview)
     };
   });
   const roles = inferRoles({ ...project, roles: project.roles || migrated.roles });
+  const horizonStartYear = derivedStartYear({ ...project, phasePlan });
+  const horizonDurationYears = derivedDurationYears(project, horizonStartYear);
+  const planningDepth = planningHorizon(horizonStartYear, CURRENT_YEAR);
+  const rawKind = migrated.kind || project.kind;
+  const kind = rawKind === "Kleinprojekt" ? "Unterhaltsprojekt"
+    : ["Unterhaltsprojekt", "Bauprojekt"].includes(rawKind) ? rawKind
+    : project.category === "Bauprojekt" ? "Bauprojekt" : inferKind(project);
   return {
     ...clone(project),
     ...migrated,
-    kind: ["Kleinprojekt", "Bauprojekt"].includes(project.kind)
-      ? project.kind
-      : project.category === "Bauprojekt"
-        ? "Bauprojekt"
-        : inferKind(project),
+    kind,
     motherPhaseKey,
     currentPhaseKey,
     currentAssignee: "",
     motherQuarter: project.motherQuarter || BASELINE_QUARTER,
     roles,
     phasePlan,
-    planningDepth: ["detail", "medium", "light"].includes(project.planningDepth) ? project.planningDepth : "detail",
-    roughFinanceK: project.roughFinanceK ?? "",
+    horizonStartYear,
+    horizonDurationYears,
+    planningDepth,
+    roughFinanceK: project.roughFinanceK ?? (planningDepth !== "detail" && rawMotherCost(project) ? String(rawMotherCost(project) / 1000) : ""),
+    projectOrderStatus: project.projectOrderStatus || (kind === "Bauprojekt" ? "offen" : "nicht erforderlich"),
     finances: Array.isArray(migrated.finances) ? migrated.finances : [],
-    gateHistory: Array.isArray(project.gateHistory) ? project.gateHistory : []
+    gateHistory: Array.isArray(migrated.gateHistory) ? migrated.gateHistory : []
   };
 }
 const BASELINE = BASELINE_PROJECTS.map(normalizeProject);
@@ -231,8 +279,10 @@ function reconcileBaselineProjects(savedProjects, deletedIds = []) {
       roles: clone(saved.roles),
       phasePlan: clone(saved.phasePlan),
       demands: clone(saved.demands),
-      planningDepth: saved.planningDepth,
+      horizonStartYear: saved.horizonStartYear || saved.startYear,
+      horizonDurationYears: saved.horizonDurationYears,
       roughFinanceK: saved.roughFinanceK,
+      projectOrderStatus: saved.projectOrderStatus,
       finances: clone(saved.finances),
       gateHistory: clone(saved.gateHistory),
       nextDecision: saved.nextDecision
@@ -243,7 +293,7 @@ function reconcileBaselineProjects(savedProjects, deletedIds = []) {
 }
 function loadState() {
   try {
-    const raw = localStorage.getItem(STORE_KEY) || localStorage.getItem(PREVIOUS_STORE_KEY) || localStorage.getItem(OLDER_STORE_KEY) || localStorage.getItem(LEGACY_STORE_KEY) || localStorage.getItem(OLDEST_STORE_KEY) || localStorage.getItem(VERY_OLD_STORE_KEY);
+    const raw = localStorage.getItem(STORE_KEY) || localStorage.getItem(PREVIOUS_STORE_KEY) || localStorage.getItem(OLDER_STORE_KEY) || localStorage.getItem(LEGACY_STORE_KEY) || localStorage.getItem(OLDEST_STORE_KEY) || localStorage.getItem(VERY_OLD_STORE_KEY) || localStorage.getItem(ANCIENT_STORE_KEY);
     if (!raw) return emptyState();
     const parsed = JSON.parse(raw);
     const migrated = migrateState(parsed, BASELINE);
@@ -365,57 +415,84 @@ function phasePlanIssues(project) {
   }
   return issues;
 }
+function phaseCloseState(row) {
+  const review = row?.closeReview || {};
+  const values = PHASE_CLOSE_FIELDS.map(field => review[field.key] || "");
+  if (values.some(value => value === "clarify")) return "clarify";
+  if (values.every(value => value === "ok")) return "ready";
+  return "open";
+}
 function projectIssues(project) {
   const issues = [];
-  const detail = project.planningDepth === "detail";
+  const detail = effectivePlanningDepth(project) === "detail";
+  const isBuildProject = project.kind === "Bauprojekt";
   if (project.uncertain) issues.push("Mutterdaten als unsicher markiert");
-  if (project.kind === "Bauprojekt" && (!project.roles?.bk || String(project.roles.bk).toLowerCase() === "offen")) issues.push("Verantwortung Baukommission offen");
-  if (detail) {
+
+  if (isBuildProject && (!project.roles?.bk || String(project.roles.bk).toLowerCase() === "offen")) {
+    issues.push("Vertretung Allgemeine Baukommission offen");
+  }
+  if (isBuildProject && detail && project.projectOrderStatus !== "vorhanden") {
+    issues.push("Schriftlicher Projektauftrag noch nicht vorhanden");
+  }
+
+  if (detail && isBuildProject) {
     project.phasePlan.forEach(row => {
       if (row.status === "none") return;
       if (row.startQuarter && row.endQuarter) {
         const phaseDemands = project.demands.filter(demand => demand.phaseKey === row.phaseKey);
         if (!phaseDemands.length) issues.push(`${phaseInfo(row.phaseKey).short}: Ressourcenbedarf noch nicht erfasst`);
       }
+      if (row.status === "done") {
+        const closeState = phaseCloseState(row);
+        if (closeState === "open") issues.push(`${phaseInfo(row.phaseKey).short}: Phasenabschluss noch nicht vollständig geprüft`);
+        if (closeState === "clarify") issues.push(`${phaseInfo(row.phaseKey).short}: Phasenabschluss mit Klärungsbedarf`);
+      }
     });
+    if (!plannedPhases(project).length) issues.push("Phasenplan offen");
+    if (phaseIndex(project.currentPhaseKey) >= 1 && (!project.roles.bhb || String(project.roles.bhb).toLowerCase() === "offen")) issues.push("Bauherrenbegleitung offen");
   }
-  if (detail && !plannedPhases(project).length) issues.push("Phasenplan offen");
-  if (project.kind === "Bauprojekt" && detail && phaseIndex(project.currentPhaseKey) >= 1 && (!project.roles.bhb || String(project.roles.bhb).toLowerCase() === "offen")) issues.push("Bauherrenbegleitung offen");
-  for (const demand of project.demands) {
-    const phase = project.phasePlan.find(row => row.phaseKey === demand.phaseKey);
-    if (phase?.status === "none") continue;
-    const item = allPhaseDemands().find(entry => entry.id === demand.id);
-    if (item?.past) continue;
-    if (isOfficeUnassigned(demand.name)) {
-      issues.push(`${phaseInfo(demand.phaseKey).short}: ${demand.remainingPt || "offene"} PT der Geschäftsstelle noch nicht namentlich zugeteilt`);
-      if (detail && nullableNumberValue(demand.remainingPt) == null) issues.push("Geschäftsstelle: Restbedarf noch nicht erfasst");
-      continue;
-    }
-    if (detail && nullableNumberValue(demand.remainingPt) == null) issues.push(`${demand.name || "Ressource"}: Restbedarf noch nicht erfasst`);
-    else if (detail && !item?.startMonth && nullableNumberValue(demand.remainingPt) != null) issues.push(`${demand.name}: ${phaseInfo(demand.phaseKey).short} zeitlich noch nicht beurteilbar`);
-    else if (item?.startMonth) {
-      const status = demandStatus(item);
-      if (status === "gap") issues.push(`${phaseInfo(demand.phaseKey).short}: ${demand.name} nicht gemeinsam tragbar`);
-      if (status === "watch") issues.push(`${phaseInfo(demand.phaseKey).short}: ${demand.name} Kapazität knapp`);
-      if (detail && status === "open") issues.push(`${phaseInfo(demand.phaseKey).short}: ${demand.name} Verfügbarkeit ungeklärt`);
-    }
-    if (detail && nullableNumberValue(demand.remainingPt) != null && !isOfficeUnassigned(demand.name) && nullableNumberValue(demand.hourlyRate) == null) {
-      issues.push(`${demand.name}: Stundensatz für Ressourcenkosten fehlt`);
-    }
-  }
-  project.finances.forEach(finance => {
-    const financeErrors = detail
-      ? validateFinanceEntry(finance)
-      : [
-          ...(nullableNumberValue(finance.amount) == null ? ["Betrag fehlt oder ist ungültig"] : []),
-          ...(!Number.isInteger(Number(finance.year)) ? ["Jahr ist ungültig"] : [])
-        ];
-    if (financeErrors.length) issues.push(`Finanzen ${finance.year || "Jahr offen"}: Angaben unvollständig`);
-  });
+
   if (detail) {
+    for (const demand of project.demands) {
+      const phase = project.phasePlan.find(row => row.phaseKey === demand.phaseKey);
+      if (phase?.status === "none") continue;
+      const item = allPhaseDemands().find(entry => entry.id === demand.id);
+      if (item?.past && nullableNumberValue(demand.remainingPt) > 0) {
+        issues.push(`${phaseInfo(demand.phaseKey).short}: Phase abgelaufen, aber ${demand.remainingPt} PT Restbedarf offen`);
+        continue;
+      }
+      if (item?.past) continue;
+      if (isOfficeUnassigned(demand.name)) {
+        issues.push(`${phaseInfo(demand.phaseKey).short}: ${demand.remainingPt || "offene"} PT der Geschäftsstelle noch nicht namentlich zugeteilt`);
+        if (nullableNumberValue(demand.remainingPt) == null) issues.push("Geschäftsstelle: Restbedarf noch nicht erfasst");
+        continue;
+      }
+      if (nullableNumberValue(demand.remainingPt) == null) issues.push(`${demand.name || "Ressource"}: Restbedarf noch nicht erfasst`);
+      else if (!item?.startMonth) issues.push(`${demand.name}: ${phaseInfo(demand.phaseKey).short} zeitlich noch nicht beurteilbar`);
+      else {
+        const status = demandStatus(item);
+        if (status === "gap") issues.push(`${phaseInfo(demand.phaseKey).short}: ${demand.name} nicht gemeinsam tragbar`);
+        if (status === "watch") issues.push(`${phaseInfo(demand.phaseKey).short}: ${demand.name} Kapazität knapp`);
+        if (status === "open") issues.push(`${phaseInfo(demand.phaseKey).short}: ${demand.name} Verfügbarkeit ungeklärt`);
+      }
+      if (nullableNumberValue(demand.remainingPt) != null && !isOfficeUnassigned(demand.name) && nullableNumberValue(demand.hourlyRate) == null) {
+        issues.push(`${demand.name}: Stundensatz für Ressourcenkosten fehlt`);
+      }
+    }
+    project.finances.forEach(finance => {
+      if (validateFinanceEntry(finance).length) issues.push(`Finanzen ${finance.year || "Jahr offen"}: Angaben unvollständig`);
+    });
+  } else {
+    if (nullableNumberValue(project.roughFinanceK) == null) {
+      issues.push(`${planningDepthInfo(project).short}: grobe Kosten noch offen`);
+    }
+  }
+
+  if (detail && isBuildProject) {
     validatePhaseTransitions({ phasePlan: project.phasePlan, gateHistory: project.gateHistory, currentPhaseKey: project.currentPhaseKey }).forEach(issue => {
-      if (issue.type === "wrongAuthority") issues.push(`${phaseInfo(issue.phaseKey).short}: Phasentor braucht Entscheid Gesamtvorstand`);
-      else issues.push(`${phaseInfo(issue.phaseKey).short}: Phasentor nicht freigegeben`);
+      const gate = FORMAL_GATES.find(item => item.key === issue.gateKey);
+      if (issue.type === "wrongAuthority") issues.push(`${gate?.label || "Phasentor"}: Entscheid des Gesamtvorstands erforderlich`);
+      else issues.push(`${gate?.label || "Phasentor"}: Vorstandsentscheid nicht freigegeben`);
     });
     issues.push(...phasePlanIssues(project));
   }
@@ -425,12 +502,13 @@ function securedCost(project) {
   return project.finances.filter(item => ["approved", "bound"].includes(item.status)).reduce((sum, item) => sum + num(item.amount), 0);
 }
 const PLANNING_DEPTHS = {
-  detail: { label: "1–3 Jahre · detailliert", short: "1–3 Jahre", description: "Vollständige Planung mit Phasen, Rollen, Ressourcen, Kapazitäten, Finanzen und Phasentoren." },
-  medium: { label: "4–10 Jahre · Grobplanung", short: "4–10 Jahre", description: "Grobe Phasen-, Rollen-, Ressourcen- und Finanzplanung. Details dürfen offen bleiben." },
-  light: { label: "+10 Jahre · Perspektive", short: "+10 Jahre", description: "Strategische Perspektive mit Vorhaben, grobem Horizont, Grössenordnung und nächstem Prüfpunkt." }
+  detail: { label: "Planung · nächste 1–3 Jahre", short: "1–3 Jahre", accuracy: "±15 %", description: "Handbuch: Phasen und Phasentore festlegen, Rollen und Verantwortlichkeiten zuweisen, Personalbedarf und Kosten detailliert planen." },
+  medium: { label: "Vorausschau · Jahre 4–10", short: "4–10 Jahre", accuracy: "±25 %", description: "Handbuch: Vorbereitung, Planung und Ausführung zeitlich grob einordnen. Keine detaillierte Ressourcen- oder Phasentorplanung." },
+  light: { label: "Perspektive · Jahre 11–30", short: "11–30 Jahre", accuracy: "±50 %", description: "Handbuch: möglichen Projektstart, voraussichtliche Projektdauer und grobe Kosten abschätzen." }
 };
 function planningDepthInfo(project) {
-  return PLANNING_DEPTHS[project?.planningDepth] || PLANNING_DEPTHS.detail;
+  const depth = planningHorizon(project?.horizonStartYear || project?.startYear, CURRENT_YEAR);
+  return PLANNING_DEPTHS[depth] || PLANNING_DEPTHS.detail;
 }
 function demandHours(demand) {
   const pt = nullableNumberValue(demand?.remainingPt);
@@ -475,7 +553,9 @@ function resourceGroups() {
   return [...map.values()].sort((a, b) => a.name.localeCompare(b.name, "de"));
 }
 function allPhaseDemands() {
-  return projects().flatMap(project => project.demands.flatMap(demand => {
+  return projects().flatMap(project => {
+    if (effectivePlanningDepth(project) !== "detail") return [];
+    return project.demands.flatMap(demand => {
     const phase = project.phasePlan.find(item => item.phaseKey === demand.phaseKey);
     if (phase?.status === "none") return [];
     const window = phaseMonthWindow(phase, CURRENT_MONTH);
@@ -491,7 +571,8 @@ function allPhaseDemands() {
       phase,
       demand
     }];
-  }));
+  });
+  });
 }
 function assessmentForResource(key) {
   return assessResourceCapacity({
@@ -642,7 +723,7 @@ function renderResourceOverview() {
     return;
   }
 
-  const entries = projects().map(projectResourceOverview)
+  const entries = projects().filter(project => effectivePlanningDepth(project) === "detail").map(projectResourceOverview)
     .filter(entry => !actionOnly || entry.status !== "ok")
     .sort((a,b) => RESOURCE_SEVERITY[b.status] - RESOURCE_SEVERITY[a.status] || a.project.object.localeCompare(b.project.object,"de"));
   container.innerHTML = entries.length ? `<div class="resource-overview-list">${entries.map(entry => `<article class="resource-overview-row project-summary ${entry.status}" data-edit-project="${esc(entry.project.id)}">
@@ -746,6 +827,8 @@ function renderTimeline() {
   renderLongHorizon();
 }
 function projectFirstPlannedYear(project) {
+  const direct = Number(project.horizonStartYear || project.startYear);
+  if (Number.isInteger(direct)) return direct;
   const years = project.phasePlan
     .filter(row => row.status !== "none" && row.startQuarter)
     .map(row => Number(String(row.startQuarter).slice(0, 4)))
@@ -753,33 +836,46 @@ function projectFirstPlannedYear(project) {
   return years.length ? Math.min(...years) : null;
 }
 function effectivePlanningDepth(project) {
-  if (project.planningDepth === "medium" || project.planningDepth === "light") return project.planningDepth;
-  const year = projectFirstPlannedYear(project);
-  if (year != null && year > CURRENT_YEAR + 10) return "light";
-  if (year != null && year > CURRENT_YEAR + 3) return "medium";
-  return "detail";
+  return planningHorizon(projectFirstPlannedYear(project), CURRENT_YEAR);
 }
 function renderLongHorizon() {
   $("#long-horizon").classList.toggle("hidden", !longOpen);
-  $("#expand-long").textContent = longOpen ? "4–10 Jahre und +10 ausblenden" : "4–10 Jahre und +10 einblenden";
+  $("#expand-long").textContent = longOpen ? "Vorausschau und Perspektive ausblenden" : "Vorausschau und Perspektive einblenden";
   const medium = projects().filter(project => effectivePlanningDepth(project) === "medium");
   const light = projects().filter(project => effectivePlanningDepth(project) === "light");
+
   const mediumCards = medium.map(project => {
-    const rows = project.phasePlan.filter(row => row.status !== "none" && row.startQuarter);
-    const first = rows.slice().sort((a,b) => qIndex(a.startQuarter) - qIndex(b.startQuarter))[0];
+    const start = projectFirstPlannedYear(project);
+    const duration = Number(project.horizonDurationYears) || 1;
+    const end = start ? start + duration - 1 : null;
     const finance = nullableNumberValue(project.roughFinanceK) != null
       ? num(project.roughFinanceK) * 1000
-      : project.finances.reduce((sum, item) => sum + num(item.amount), 0);
-    return `<article class="horizon-project medium" data-select="${esc(project.id)}"><span>4–10 Jahre · Grobplanung</span><strong>${esc(project.object)}</strong><small>${first ? `${esc(phaseInfo(first.phaseKey).label)} · ab ${qLabel(first.startQuarter)}` : esc(phaseInfo(project.currentPhaseKey).label)}${project.roles?.bk && project.roles.bk !== "offen" ? ` · BK: ${esc(project.roles.bk)}` : ""}</small><div><b>${finance ? chf(finance, true) : "Finanzen offen"}</b><em>${project.demands.length ? `${project.demands.length} Ressourcenpositionen` : "Ressourcen grob offen"}</em></div></article>`;
+      : rawMotherCost(project);
+    return `<article class="horizon-project medium" data-select="${esc(project.id)}">
+      <span>Vorausschau · Jahre 4–10</span>
+      <strong>${esc(project.object)}</strong>
+      <small>${esc(project.measure || "Vorhaben zeitlich einordnen")}</small>
+      <div><b>${start ? `${start}${end && end !== start ? `–${end}` : ""}` : "Zeitraum offen"}</b><em>${finance ? `Kosten ca. ${chf(finance, true)} · ±25 %` : "Kosten offen · Ziel ±25 %"}</em></div>
+    </article>`;
   }).join("");
+
   const lightCards = light.map(project => {
-    const year = projectFirstPlannedYear(project);
-    const finance = nullableNumberValue(project.roughFinanceK);
-    return `<article class="horizon-project light" data-select="${esc(project.id)}"><span>+10 Jahre · Perspektive</span><strong>${esc(project.object)}</strong><small>${esc(project.measure || "Vorhaben im Blick behalten")}</small><div><b>${year ? `ab ${year}` : "+10 Jahre"}</b><em>${finance != null ? `Grössenordnung ${chf(finance * 1000, true)}` : "Grössenordnung offen"}${project.nextDecision ? ` · ${esc(project.nextDecision)}` : ""}</em></div></article>`;
+    const start = projectFirstPlannedYear(project);
+    const duration = Number(project.horizonDurationYears) || 1;
+    const finance = nullableNumberValue(project.roughFinanceK) != null
+      ? num(project.roughFinanceK) * 1000
+      : rawMotherCost(project);
+    return `<article class="horizon-project light" data-select="${esc(project.id)}">
+      <span>Perspektive · Jahre 11–30</span>
+      <strong>${esc(project.object)}</strong>
+      <small>${esc(project.measure || "Vorhaben im Blick behalten")}</small>
+      <div><b>${start ? `Start ca. ${start} · ${duration} J.` : "Projektstart offen"}</b><em>${finance ? `Kosten ca. ${chf(finance, true)} · ±50 %` : "Kosten offen · Ziel ±50 %"}${project.nextDecision ? ` · ${esc(project.nextDecision)}` : ""}</em></div>
+    </article>`;
   }).join("");
-  $("#long-horizon").innerHTML = `<div class="long-title"><strong>Planung mit passender Flughöhe</strong><span>1–3 Jahre detailliert · 4–10 Jahre grob · +10 Jahre als strategische Perspektive</span></div>
-    <div class="horizon-section"><div class="horizon-heading"><strong>4–10 Jahre</strong><span>${medium.length} Vorhaben</span></div><div class="horizon-projects">${mediumCards || '<div class="empty-note">Noch keine Vorhaben in der Grobplanung.</div>'}</div></div>
-    <div class="horizon-section"><div class="horizon-heading"><strong>+10 Jahre</strong><span>${light.length} Vorhaben</span></div><div class="horizon-projects light-grid">${lightCards || '<div class="empty-note">Noch keine strategischen Perspektiven erfasst.</div>'}</div></div>`;
+
+  $("#long-horizon").innerHTML = `<div class="long-title"><strong>Rollende Planung gemäss Bauhandbuch</strong><span>Nächste 1–3 Jahre detailliert. Jahre 4–10 als Vorausschau. Jahre 11–30 als Perspektive.</span></div>
+    <div class="horizon-section"><div class="horizon-heading"><strong>Vorausschau · 4–10 Jahre</strong><span>${medium.length} Vorhaben</span></div><div class="horizon-projects">${mediumCards || '<div class="empty-note">Noch keine Vorhaben in der Vorausschau.</div>'}</div></div>
+    <div class="horizon-section"><div class="horizon-heading"><strong>Perspektive · 11–30 Jahre</strong><span>${light.length} Vorhaben</span></div><div class="horizon-projects light-grid">${lightCards || '<div class="empty-note">Noch keine langfristigen Perspektiven erfasst.</div>'}</div></div>`;
 }
 function renderDetail() {
   let project = projects().find(item => item.id === selectedId);
@@ -791,33 +887,56 @@ function renderDetail() {
     $("#project-detail").innerHTML = '<div class="empty-note">Noch kein Projekt vorhanden.</div>';
     return;
   }
+
   const issues = projectIssues(project);
-  const planned = plannedPhases(project);
-  const latestGate = project.gateHistory.slice().sort((a, b) => String(b.date).localeCompare(String(a.date)))[0];
-  const resources = project.demands.filter(demand => project.phasePlan.find(row => row.phaseKey === demand.phaseKey)?.status !== "none").slice(0, 4);
-  const bk = project.roles?.bk && String(project.roles.bk).toLowerCase() !== "offen" ? project.roles.bk : "";
-  const resourceCost = projectResourceCostMeta(project);
+  const depthKey = effectivePlanningDepth(project);
   const depth = planningDepthInfo(project);
-  $("#project-detail").innerHTML = `<div class="project-cover"><div class="meta"><span>${esc(project.kind)} · ${esc(depth.short)} · ${state.mode === "scenario" ? "Szenario" : "scharfer Stand"}</span><span class="status-chip">${issues.length ? `${issues.length} Punkte offen` : "Plan prüfbar"}</span></div><h3>${esc(project.object)}</h3><p>${esc(project.measure)}</p></div>
+  const isBuildProject = project.kind === "Bauprojekt";
+  const bk = project.roles?.bk && String(project.roles.bk).toLowerCase() !== "offen" ? project.roles.bk : "";
+  const start = projectFirstPlannedYear(project);
+  const duration = Number(project.horizonDurationYears) || 1;
+  const end = start ? start + duration - 1 : null;
+  const roughFinance = nullableNumberValue(project.roughFinanceK) != null ? num(project.roughFinanceK) * 1000 : rawMotherCost(project);
+
+  if (depthKey !== "detail") {
+    $("#project-detail").innerHTML = `<div class="project-cover"><div class="meta"><span>${esc(project.kind)} · ${esc(depth.label)} · ${state.mode === "scenario" ? "Szenario" : "scharfer Stand"}</span><span class="status-chip">${issues.length ? `${issues.length} Punkte offen` : "im Blick"}</span></div><h3>${esc(project.object)}</h3><p>${esc(project.measure)}</p></div>
+      <div class="project-body">
+        <div class="horizon-focus ${depthKey}"><span>${depthKey === "medium" ? "Vorausschau · 4–10 Jahre" : "Perspektive · 11–30 Jahre"}</span><strong>${start ? `${start}${end && end !== start ? `–${end}` : ""}` : "Zeitraum offen"}</strong><small>${esc(depth.description)}</small></div>
+        <div class="perspectives"><div class="perspective"><span>Projektstart</span><strong>${start || "offen"}</strong></div><div class="perspective"><span>Dauer</span><strong>${duration} J.</strong></div><div class="perspective"><span>Grobe Kosten</span><strong>${roughFinance ? chf(roughFinance, true) : "offen"}</strong></div><div class="perspective"><span>Zielgenauigkeit</span><strong>${esc(depth.accuracy)}</strong></div></div>
+        <div class="next-box"><span>Nächster Prüfpunkt</span><strong>${esc(project.nextDecision || "noch offen")}</strong><small>Detailplanung startet automatisch, sobald das Vorhaben in das rollende 3 Jahres Fenster rückt.</small></div>
+        ${issues.length ? `<div class="issue-list">${issues.slice(0, 5).map(issue => `<span>${esc(issue)}</span>`).join("")}</div>` : ""}
+        <div class="project-actions"><button class="button primary" data-edit-project="${esc(project.id)}">Vorausschau bearbeiten</button></div>
+        ${changedProject(project) && state.mode === "sharp" ? `<button class="restore-link" data-restore="${esc(project.id)}">Planung auf Stand Mutterliste zurücksetzen</button>` : ""}
+      </div>`;
+    return;
+  }
+
+  const planned = plannedPhases(project);
+  const latestGate = project.gateHistory.filter(gate => gate.gateKey && !gate.legacyGate).slice().sort((a, b) => String(b.date).localeCompare(String(a.date)))[0];
+  const resources = project.demands.filter(demand => project.phasePlan.find(row => row.phaseKey === demand.phaseKey)?.status !== "none").slice(0, 4);
+  const resourceCost = projectResourceCostMeta(project);
+
+  $("#project-detail").innerHTML = `<div class="project-cover"><div class="meta"><span>${esc(project.kind)} · Planung 1–3 Jahre · ${state.mode === "scenario" ? "Szenario" : "scharfer Stand"}</span><span class="status-chip">${issues.length ? `${issues.length} Punkte offen` : "Plan prüfbar"}</span></div><h3>${esc(project.object)}</h3><p>${esc(project.measure)}</p></div>
     <div class="project-body">
-      <div class="mother-current"><span>Mutterstand ${DATA_STAND_LABEL}</span><strong>${esc(phaseInfo(project.motherPhaseKey).label)}</strong><small>${project.uncertain ? "Quelle als unsicher markiert · " : ""}${bk ? `Verantwortung Baukommission: ${esc(bk)}` : "Verantwortung Baukommission offen"}</small></div>
-      <div class="next-box"><span>Phasentor</span><strong>${esc(latestGate?.status || "noch kein Entscheid erfasst")}</strong><small>${latestGate ? `${esc(phaseInfo(latestGate.phaseKey).label)} · ${esc(latestGate.authority)} · ${esc(latestGate.date)}` : "Im Projekt planen oder protokollieren"}</small></div>
-      <span class="section-label">Alle Projektphasen</span>
+      <div class="mother-current"><span>Mutterstand ${DATA_STAND_LABEL}</span><strong>${esc(phaseInfo(project.motherPhaseKey).label)}</strong><small>${project.uncertain ? "Quelle als unsicher markiert · " : ""}${isBuildProject ? (bk ? `Vertretung Allgemeine Baukommission: ${esc(bk)}` : "Vertretung Allgemeine Baukommission offen") : "Operative Verantwortung: Geschäftsstelle"}</small></div>
+      ${isBuildProject ? `<div class="next-box"><span>Formelles Phasentor</span><strong>${esc(latestGate?.status || "noch kein Vorstandsentscheid erfasst")}</strong><small>${latestGate ? `${esc(gateDefinition(latestGate.gateKey).label)} · Gesamtvorstand · ${esc(latestGate.date)}` : "Drei formelle Tore gemäss Bauhandbuch"}</small></div>
+      <span class="section-label">Sechs Bauphasen gemäss Bauhandbuch</span>
       <div class="phase-steps">${PHASES.map(phase => {
         const row = project.phasePlan.find(item => item.phaseKey === phase.key);
         if (row?.status === "none") return `<button class="phase-step ${phase.className} no-activity" title="${esc(phase.label)} · Keine Tätigkeit" aria-label="${esc(phase.label)}: Keine Tätigkeit"></button>`;
         const resourceStatus = row?.startQuarter ? phaseResourceStatus(project, phase.key) : "open";
         const hasDemand = project.demands.some(demand => demand.phaseKey === phase.key);
         const statusText = hasDemand ? RESOURCE_STATUS[resourceStatus].label : "Ressourcenbedarf offen";
-        return `<button class="phase-step ${phase.className} resource-${resourceStatus} ${row?.startQuarter ? "done" : ""} ${phase.key === project.currentPhaseKey ? "current" : ""}" title="${esc(phase.label)} · ${row?.startQuarter ? `${qLabel(row.startQuarter)} bis ${qLabel(row.endQuarter)} · ${statusText}` : "noch nicht geplant"}" aria-label="${esc(phase.label)}: ${esc(statusText)}"></button>`;
-      }).join("")}</div>
-      <div class="perspectives"><div class="perspective"><span>Phasen geplant</span><strong>${planned.length} von ${project.phasePlan.filter(row => row.status !== "none").length}</strong></div><div class="perspective"><span>Ressourcenkosten</span><strong>${resourceCost.total ? chf(resourceCost.total, true) : "offen"}</strong></div><div class="perspective"><span>Freigegeben / gebunden</span><strong>${chf(securedCost(project), true)}</strong></div><div class="perspective"><span>Offene Punkte</span><strong>${issues.length}</strong></div></div>
-      <div class="finance-project-note ${project.finances.length ? "" : "open"}"><strong>${project.finances.length ? "Finanzplanung erfasst" : "Finanzen noch nicht erfasst"}</strong><span>${project.finances.length ? "Die Jahressicht ist im Bereich Finanzen sichtbar." : "Hinweis: Das blockiert weder Planung noch Freigabe."}</span></div>
+        const closeState = phaseCloseState(row);
+        return `<button class="phase-step ${phase.className} resource-${resourceStatus} close-${closeState} ${row?.startQuarter ? "done" : ""} ${phase.key === project.currentPhaseKey ? "current" : ""}" title="${esc(phase.label)} · ${row?.startQuarter ? `${qLabel(row.startQuarter)} bis ${qLabel(row.endQuarter)} · ${statusText}` : "noch nicht geplant"}" aria-label="${esc(phase.label)}: ${esc(statusText)}"></button>`;
+      }).join("")}</div>` : `<div class="next-box"><span>Unterhaltsprojekt</span><strong>Operative Führung durch die Geschäftsstelle</strong><small>Keine formellen Vorstandstore gemäss Bauhandbuch.</small></div>`}
+      <div class="perspectives"><div class="perspective"><span>${isBuildProject ? "Phasen geplant" : "Planungshorizont"}</span><strong>${isBuildProject ? `${planned.length} von ${project.phasePlan.filter(row => row.status !== "none").length}` : "1–3 Jahre"}</strong></div><div class="perspective"><span>Ressourcenkosten</span><strong>${resourceCost.total ? chf(resourceCost.total, true) : "offen"}</strong></div><div class="perspective"><span>Freigegeben / gebunden</span><strong>${chf(securedCost(project), true)}</strong></div><div class="perspective"><span>Offene Punkte</span><strong>${issues.length}</strong></div></div>
+      <div class="finance-project-note ${project.finances.length ? "" : "open"}"><strong>${project.finances.length ? "Finanzplanung erfasst" : "Finanzen noch nicht erfasst"}</strong><span>${project.finances.length ? "Die Jahressicht ist im Bereich Finanzen sichtbar." : "Detailplanung im 3 Jahres Fenster noch offen."}</span></div>
       <span class="section-label">Ressourcen dieses Projekts</span>
       <div class="mini-resources">${resources.length ? resources.map(demand => {
         const item = allPhaseDemands().find(entry => entry.id === demand.id);
         const status = item ? demandStatus(item) : "open";
-        const statusLabel = item?.past ? "Vergangene Phase, nicht mehr geprüft" : RESOURCE_STATUS[status].label;
+        const statusLabel = item?.past && nullableNumberValue(demand.remainingPt) > 0 ? "Phase abgelaufen, Restbedarf offen" : item?.past ? "Vergangene Phase" : RESOURCE_STATUS[status].label;
         return `<div class="mini-resource ${status}"><div><strong>${esc(demand.name)}</strong><span>${phaseInfo(demand.phaseKey).label} · ${esc(statusLabel)}</span></div><b>${nullableNumberValue(demand.remainingPt) == null ? "offen" : `${num(demand.remainingPt)} PT`}</b></div>`;
       }).join("") : '<div class="empty-note">Noch kein Ressourcenbedarf eingetragen.</div>'}</div>
       ${issues.length ? `<div class="issue-list">${issues.slice(0, 5).map(issue => `<span>${esc(issue)}</span>`).join("")}</div>` : ""}
@@ -885,36 +1004,50 @@ function renderResources() {
   renderResourceOverview();
 }
 function allFinanceEntries() {
-  return projects().flatMap(project => project.finances.map(item => ({ ...item, projectId: project.id, object: project.object })));
+  return projects()
+    .filter(project => effectivePlanningDepth(project) === "detail")
+    .flatMap(project => project.finances.map(item => ({ ...item, projectId: project.id, object: project.object })));
 }
 function costForYears(years, statuses = null) {
   return allFinanceEntries().filter(item => years.includes(Number(item.year)) && (!statuses || statuses.includes(item.status))).reduce((sum, item) => sum + num(item.amount), 0);
 }
+function roughCostForDepth(depth) {
+  return projects()
+    .filter(project => effectivePlanningDepth(project) === depth)
+    .reduce((sum, project) => {
+      const rough = nullableNumberValue(project.roughFinanceK);
+      return sum + (rough == null ? rawMotherCost(project) : rough * 1000);
+    }, 0);
+}
 function renderFinance() {
-  const withFinance = projects().filter(project => project.finances.length > 0).length;
-  const withoutFinance = projects().length - withFinance;
-  $("#finance-coverage").innerHTML = `<strong>${withFinance} Projekte mit Finanzplanung</strong><span>${withoutFinance} Projekte ohne Finanzplanung · Hinweis, keine Freigabesperre</span>`;
+  const detailedProjects = projects().filter(project => effectivePlanningDepth(project) === "detail");
+  const withFinance = detailedProjects.filter(project => project.finances.length > 0).length;
+  const withoutFinance = detailedProjects.length - withFinance;
+  $("#finance-coverage").innerHTML = `<strong>${withFinance} von ${detailedProjects.length} Projekten im 3 Jahres Fenster mit Finanzplanung</strong><span>${withoutFinance} Detailprojekte ohne Finanzplanung · Vorausschau und Perspektive werden nur mit groben Kosten geführt.</span>`;
   $("#finance-coverage").classList.toggle("complete", withoutFinance === 0);
-  const horizons = [
-    { label: "0 bis 1 Jahr", years: [CURRENT_YEAR, CURRENT_YEAR + 1] },
-    { label: "2 bis 3 Jahre", years: [CURRENT_YEAR + 2, CURRENT_YEAR + 3] },
-    { label: "4 bis 10 Jahre", years: Array.from({ length: 7 }, (_, index) => CURRENT_YEAR + 4 + index) }
-  ];
-  $("#finance-horizons").innerHTML = horizons.map(horizon => {
-    const secured = costForYears(horizon.years, ["approved", "bound"]);
-    const bound = costForYears(horizon.years, ["bound"]);
-    const planning = costForYears(horizon.years, ["estimate", "budgeted"]);
-    return `<article><span>${horizon.label}</span><strong>${chf(secured, true)}</strong><small>freigegeben und gebunden</small><div><b>${chf(bound, true)}</b> gebunden · <b>${chf(planning, true)}</b> Planung</div></article>`;
-  }).join("");
-  const totals = YEARS.map(year => Object.fromEntries(COST_STATUSES.map(status => [status.key, costForYears([year], [status.key])])));
+
+  const detailYears = Array.from({ length: 4 }, (_, index) => CURRENT_YEAR + index);
+  const secured = costForYears(detailYears, ["approved", "bound"]);
+  const bound = costForYears(detailYears, ["bound"]);
+  const planning = costForYears(detailYears, ["estimate", "budgeted"]);
+  const mediumRough = roughCostForDepth("medium");
+  const lightRough = roughCostForDepth("light");
+
+  $("#finance-horizons").innerHTML = [
+    `<article><span>Planung · 1–3 Jahre</span><strong>${chf(secured, true)}</strong><small>freigegeben und gebunden · Zielgenauigkeit ±15 %</small><div><b>${chf(bound, true)}</b> gebunden · <b>${chf(planning, true)}</b> Planung</div></article>`,
+    `<article><span>Vorausschau · 4–10 Jahre</span><strong>${mediumRough ? chf(mediumRough, true) : "–"}</strong><small>grobe Kostenordnung · Zielgenauigkeit ±25 %</small><div>Keine Detailfinanzplanung</div></article>`,
+    `<article><span>Perspektive · 11–30 Jahre</span><strong>${lightRough ? chf(lightRough, true) : "–"}</strong><small>grobe Kostenordnung · Zielgenauigkeit ±50 %</small><div>Keine Detailfinanzplanung</div></article>`
+  ].join("");
+
+  const chartYears = detailYears;
+  const totals = chartYears.map(year => Object.fromEntries(COST_STATUSES.map(status => [status.key, costForYears([year], [status.key])])));
   const max = Math.max(1, ...totals.map(total => Object.values(total).reduce((a, b) => a + b, 0)));
-  $("#finance-chart").innerHTML = YEARS.map((year, index) => {
+  $("#finance-chart").innerHTML = chartYears.map((year, index) => {
     const total = Object.values(totals[index]).reduce((a, b) => a + b, 0);
     return `<div class="finance-year"><strong>${total ? chf(total, true) : "–"}</strong><div class="finance-stack" style="height:${total / max * 88}%">${COST_STATUSES.map(status => `<i class="${status.className}" style="height:${total ? totals[index][status.key] / total * 100 : 0}%" title="${status.label}: ${chf(totals[index][status.key])}"></i>`).join("")}</div><span>${year}</span></div>`;
   }).join("");
   $("#finance-legend").innerHTML = COST_STATUSES.map(status => `<span><i class="${status.className}"></i>${status.label}</span>`).join("");
 }
-
 function quarterOptions(selected, blank = true) {
   return `${blank ? '<option value="">noch offen</option>' : ""}${ALL_QUARTERS.map(quarter => `<option value="${quarter}" ${quarter === selected ? "selected" : ""}>${qLabel(quarter)}</option>`).join("")}`;
 }
@@ -945,11 +1078,41 @@ function setRoleSelect(selector, value, emptyLabel) {
   const isEmpty = ["offen", "nach bedarf", "noch nicht definiert"].includes(normalized.toLowerCase());
   $(selector).innerHTML = roleOptions(isEmpty ? "" : normalized, emptyLabel);
 }
+function formalGateAfterPhase(phaseKey) {
+  return FORMAL_GATES.find(gate => gate.afterPhase === phaseKey);
+}
 function renderPhasePlanEditor() {
   $("#phase-plan-editor").innerHTML = editPhasePlan.map((row, index) => {
     const noActivity = row.status === "none";
-    return `<div class="phase-plan-row ${phaseInfo(row.phaseKey).className} ${noActivity ? "no-activity" : ""}" data-phase-plan="${index}"><div><i></i><strong>${phaseInfo(row.phaseKey).label}</strong><span>${noActivity ? "Für die BGR ist in dieser Phase keine Tätigkeit vorgesehen." : index === 1 ? "Danach Entscheid Gesamtvorstand" : index === 3 ? "Danach Projektfreigabe Gesamtvorstand" : "Entscheid im Kompetenzrahmen"}</span></div><label><span>Status</span><select class="pp-status">${phaseStatusOptions(row.status)}</select></label>${noActivity ? '<div class="no-activity-note"><strong>Keine Tätigkeit</strong><span>Die Phase bleibt sichtbar. Zeitraum und Ressourcen sind hier nicht erforderlich.</span></div>' : `<label><span>Start</span><select class="pp-start">${quarterOptions(row.startQuarter)}</select></label><label><span>Ende</span><select class="pp-end">${quarterOptions(row.endQuarter)}</select></label>`}</div>`;
+    const formalGate = formalGateAfterPhase(row.phaseKey);
+    const decisionNote = formalGate
+      ? `${formalGate.label}: Vorstand nach dieser Phase`
+      : "Phasenabschluss: Allgemeine Baukommission";
+    return `<div class="phase-plan-row ${phaseInfo(row.phaseKey).className} ${noActivity ? "no-activity" : ""}" data-phase-plan="${index}">
+      <div><i></i><strong>${phaseInfo(row.phaseKey).label}</strong><span>${noActivity ? "Für die BGR ist in dieser Phase keine Tätigkeit vorgesehen." : decisionNote}</span></div>
+      <label><span>Status</span><select class="pp-status">${phaseStatusOptions(row.status)}</select></label>
+      ${noActivity ? '<div class="no-activity-note"><strong>Keine Tätigkeit</strong><span>Die Phase bleibt sichtbar. Zeitraum und Ressourcen sind hier nicht erforderlich.</span></div>' : `<label><span>Start</span><select class="pp-start">${quarterOptions(row.startQuarter)}</select></label><label><span>Ende</span><select class="pp-end">${quarterOptions(row.endQuarter)}</select></label>`}
+    </div>`;
   }).join("");
+  renderPhaseCloseEditor();
+}
+function closeReviewOptions(selected = "") {
+  return `<option value="" ${selected === "" ? "selected" : ""}>offen</option><option value="ok" ${selected === "ok" ? "selected" : ""}>erfüllt</option><option value="clarify" ${selected === "clarify" ? "selected" : ""}>Klärung nötig</option>`;
+}
+function renderPhaseCloseEditor() {
+  const relevant = editPhasePlan
+    .map((row, index) => ({ row, index }))
+    .filter(item => item.row.status === "done" || item.row.status === "current");
+  $("#phase-close-editor").innerHTML = relevant.length ? relevant.map(({ row, index }) => {
+    const review = row.closeReview || emptyCloseReview();
+    const state = phaseCloseState(row);
+    const stateLabel = state === "ready" ? "bereit für nächste Phase" : state === "clarify" ? "Klärung nötig" : "Prüfung offen";
+    return `<article class="phase-close-card ${state}" data-phase-close="${index}">
+      <div class="phase-close-head"><div><strong>${esc(phaseInfo(row.phaseKey).label)}</strong><span>${row.status === "done" ? "Phasenabschluss" : "Aktuelle Phase · Prüfung vorbereiten"}</span></div><b>${esc(stateLabel)}</b></div>
+      <div class="phase-close-grid">${PHASE_CLOSE_FIELDS.map(field => `<label title="${esc(field.question)}"><span>${esc(field.label)}</span><select data-close-field="${field.key}">${closeReviewOptions(review[field.key] || "")}</select><small>${esc(field.question)}</small></label>`).join("")}</div>
+      <div class="form-grid two"><label><span>Prüfdatum</span><input class="close-date" type="date" value="${esc(review.date || "")}"></label><label><span>Bemerkung</span><input class="close-note" value="${esc(review.note || "")}" placeholder="nur falls nötig"></label></div>
+    </article>`;
+  }).join("") : '<div class="empty-note">Noch keine aktuelle oder abgeschlossene Phase für die Abschlussprüfung.</div>';
 }
 function renderBKSummary() {
   const summary = $("#f-bk-summary");
@@ -1028,11 +1191,37 @@ function updateFinanceAmountPreviews() {
     target.textContent = value == null ? "z. B. 50 = CHF 50’000" : `= ${chf(value * 1000)}`;
   });
 }
+function gateDefinition(key) {
+  return FORMAL_GATES.find(gate => gate.key === key) || FORMAL_GATES[0];
+}
+function renderFormalGatesOverview() {
+  const target = $("#formal-gates-overview");
+  if (!target) return;
+  target.innerHTML = FORMAL_GATES.map(definition => {
+    const latest = editGateHistory
+      .filter(gate => gate.gateKey === definition.key && !gate.legacyGate)
+      .slice()
+      .sort((a,b) => String(b.date || "").localeCompare(String(a.date || "")))[0];
+    const status = latest?.status || "offen";
+    return `<article class="formal-gate ${esc(status.replace(/\s+/g,"-"))}"><span>${esc(definition.label)}</span><strong>${esc(definition.timing)}</strong><small>${esc(definition.decision)}</small><b>${esc(status)}</b></article>`;
+  }).join("");
+}
 function renderGateEditor() {
-  $("#gate-editor").innerHTML = editGateHistory.length ? editGateHistory.map((gate, index) => {
+  renderFormalGatesOverview();
+  const formalEntries = editGateHistory.map((gate,index)=>({gate,index})).filter(item => item.gate.gateKey && !item.gate.legacyGate);
+  $("#gate-editor").innerHTML = formalEntries.length ? formalEntries.map(({ gate, index }) => {
     const locked = gate.persisted ? "disabled" : "";
-    return `<div class="gate-history-row" data-gate="${index}"><label><span>Phase</span><select class="g-phase" ${locked}>${phaseOptions(gate.phaseKey)}</select></label><label><span>Entscheid</span><select class="g-status" ${locked}>${options(GATE_STATUSES, gate.status)}</select></label><label><span>Instanz</span><select class="g-authority" ${locked}>${options(GATE_AUTHORITIES, gate.authority)}</select></label><label><span>Datum</span><input class="g-date" type="date" value="${esc(gate.date)}" ${locked}></label><label><span>Kurzbegründung</span><input class="g-reason" value="${esc(gate.reason || "")}" ${locked}></label><label><span>Auflagen</span><input class="g-conditions" value="${esc(gate.conditions || "")}" ${locked}></label><label><span>Nächste Phase</span><select class="g-next" ${locked}><option value="">keine</option>${phaseOptions(gate.nextPhase)}</select></label>${gate.persisted ? '<span class="history-lock">protokolliert</span>' : `<button type="button" class="remove" data-remove-gate="${index}">×</button>`}</div>`;
-  }).join("") : '<div class="empty-note">Noch kein Phasentorentscheid protokolliert.</div>';
+    const definition = gateDefinition(gate.gateKey);
+    return `<div class="gate-history-row handbook-gate" data-gate="${index}">
+      <label><span>Phasentor</span><select class="g-key" ${locked}>${FORMAL_GATES.map(item => `<option value="${item.key}" ${item.key === gate.gateKey ? "selected" : ""}>${item.label} · ${item.timing}</option>`).join("")}</select></label>
+      <div class="gate-decision-text"><span>Entscheid Gesamtvorstand</span><strong>${esc(definition.decision)}</strong></div>
+      <label><span>Entscheid</span><select class="g-status" ${locked}>${options(GATE_STATUSES, gate.status)}</select></label>
+      <label><span>Datum</span><input class="g-date" type="date" value="${esc(gate.date || "")}" ${locked}></label>
+      <label><span>Kurzbegründung</span><input class="g-reason" value="${esc(gate.reason || "")}" ${locked}></label>
+      <label><span>Auflagen</span><input class="g-conditions" value="${esc(gate.conditions || "")}" ${locked}></label>
+      ${gate.persisted ? '<span class="history-lock">protokolliert</span>' : `<button type="button" class="remove" data-remove-gate="${index}">×</button>`}
+    </div>`;
+  }).join("") : '<div class="empty-note">Noch kein formeller Vorstandsentscheid protokolliert.</div>';
 }
 function syncEditors() {
   editPhasePlan = $$("[data-phase-plan]").map((row, index) => {
@@ -1041,14 +1230,26 @@ function syncEditors() {
       ...editPhasePlan[index],
       status,
       startQuarter: status === "none" ? "" : (row.querySelector(".pp-start")?.value || ""),
-      endQuarter: status === "none" ? "" : (row.querySelector(".pp-end")?.value || "")
+      endQuarter: status === "none" ? "" : (row.querySelector(".pp-end")?.value || ""),
+      closeReview: editPhasePlan[index]?.closeReview || emptyCloseReview()
     };
+  });
+  $$("[data-phase-close]").forEach(card => {
+    const index = Number(card.dataset.phaseClose);
+    if (!Number.isFinite(index) || !editPhasePlan[index]) return;
+    const review = { ...(editPhasePlan[index].closeReview || emptyCloseReview()) };
+    PHASE_CLOSE_FIELDS.forEach(field => {
+      review[field.key] = card.querySelector(`[data-close-field="${field.key}"]`)?.value || "";
+    });
+    review.date = card.querySelector(".close-date")?.value || "";
+    review.note = card.querySelector(".close-note")?.value.trim() || "";
+    editPhasePlan[index].closeReview = review;
   });
   editDemands = $$("[data-demand]").map((row, index) => ({
     ...editDemands[index],
     id: editDemands[index]?.id || uuid("d"),
     name: canonicalResourceName(row.querySelector(".d-name").value),
-    phaseKey: row.querySelector(".d-phase").value,
+    phaseKey: canonicalPhaseKey(row.querySelector(".d-phase").value),
     remainingPt: row.querySelector(".d-remaining").value,
     hoursPerPt: row.querySelector(".d-hours")?.value || "8",
     hourlyRate: row.querySelector(".d-rate")?.value || ""
@@ -1064,25 +1265,34 @@ function syncEditors() {
       informationDate: row.querySelector(".pc-date").value
     };
   });
-  editGateHistory = $$("[data-gate]").map((row, index) => {
-    if (editGateHistory[index]?.persisted) return editGateHistory[index];
-    return {
+  $$("[data-gate]").forEach(row => {
+    const index = Number(row.dataset.gate);
+    if (!Number.isFinite(index) || !editGateHistory[index] || editGateHistory[index].persisted) return;
+    const gateKey = row.querySelector(".g-key").value;
+    const definition = gateDefinition(gateKey);
+    editGateHistory[index] = {
       ...editGateHistory[index],
       id: editGateHistory[index]?.id || uuid("gate"),
-      phaseKey: row.querySelector(".g-phase").value,
+      gateKey,
+      phaseKey: definition.afterPhase,
       status: row.querySelector(".g-status").value,
-      authority: row.querySelector(".g-authority").value,
+      authority: "Gesamtvorstand",
       date: row.querySelector(".g-date").value,
       reason: row.querySelector(".g-reason").value.trim(),
       conditions: row.querySelector(".g-conditions").value.trim(),
-      nextPhase: row.querySelector(".g-next").value
+      legacyGate: false
     };
   });
 }
+function currentEditorDepth() {
+  return planningHorizon($("#f-horizon-start")?.value, CURRENT_YEAR);
+}
 function validateProjectEditors() {
   const errors = [];
-  const planningDepth = $("#f-planning-depth").value || "detail";
-  const detailed = planningDepth === "detail";
+  const detailed = currentEditorDepth() === "detail";
+  const isBuildProject = $("#f-kind").value === "Bauprojekt";
+  if (!detailed) return errors;
+
   for (const demand of editDemands) {
     const phase = editPhasePlan.find(item => item.phaseKey === demand.phaseKey);
     if (phase?.status === "none") continue;
@@ -1091,7 +1301,7 @@ function validateProjectEditors() {
       const hoursPerPt = nullableNumberValue(demand.hoursPerPt);
       const hourlyRate = nullableNumberValue(demand.hourlyRate);
       if (hoursPerPt == null || hoursPerPt <= 0) errors.push(`${demand.name || "Ressource"}: Stunden pro PT fehlen`);
-      if (detailed && hourlyRate == null) errors.push(`${demand.name || "Ressource"}: Stundensatz fehlt`);
+      if (hourlyRate == null) errors.push(`${demand.name || "Ressource"}: Stundensatz fehlt`);
     }
   }
   const demandKeys = editDemands
@@ -1099,23 +1309,19 @@ function validateProjectEditors() {
     .map(demand => `${resourceKey(demand.name)}:${demand.phaseKey}`)
     .filter(key => !key.startsWith(":"));
   if (new Set(demandKeys).size !== demandKeys.length) errors.push("Dieselbe Ressource darf je Projektphase nur einmal erfasst werden");
+
   for (const finance of editFinances) {
-    const financeErrors = detailed
-      ? validateFinanceEntry(finance)
-      : [
-          ...(nullableNumberValue(finance.amount) == null ? ["Betrag fehlt oder ist ungültig"] : []),
-          ...(!Number.isInteger(Number(finance.year)) ? ["Jahr ist ungültig"] : [])
-        ];
-    errors.push(...financeErrors.map(error => `Finanzen ${finance.year || ""}: ${error}`));
+    errors.push(...validateFinanceEntry(finance).map(error => `Finanzen ${finance.year || ""}: ${error}`));
   }
-  if (detailed) {
-    for (const gate of editGateHistory.filter(item => !item.persisted)) {
+
+  if (isBuildProject) {
+    for (const gate of editGateHistory.filter(item => !item.persisted && item.gateKey && !item.legacyGate)) {
       if (!gate.date) errors.push("Phasentor: Datum ist Pflicht");
       if (gate.status !== "geplant" && !gate.reason) errors.push("Phasentor: Kurzbegründung ist bei einem erfolgten Entscheid Pflicht");
     }
     validatePhaseTransitions({ phasePlan: editPhasePlan, gateHistory: editGateHistory, currentPhaseKey: $("#f-phase").value }).forEach(issue => {
-      if (issue.type === "wrongAuthority") errors.push(`Phasentor ${phaseInfo(issue.phaseKey).short}: Entscheid des Gesamtvorstands erforderlich`);
-      else errors.push(`Phasentor ${phaseInfo(issue.phaseKey).short}: Freigabe fehlt`);
+      const definition = gateDefinition(issue.gateKey);
+      errors.push(`${definition.label}: ${issue.type === "wrongAuthority" ? "Entscheid des Gesamtvorstands erforderlich" : "Vorstandsfreigabe fehlt"}`);
     });
   }
   return errors;
@@ -1135,8 +1341,10 @@ function openProject(id, newProject = false) {
     roles: { gs: "offen", bk: "offen", vs: "nach Bedarf", bhb: "offen" },
     cashflow: [],
     cost: "",
-    planningDepth: "detail",
+    horizonStartYear: CURRENT_YEAR,
+    horizonDurationYears: 1,
     roughFinanceK: "",
+    projectOrderStatus: "offen",
     nextDecision: ""
   });
   if (!project) return;
@@ -1146,24 +1354,26 @@ function openProject(id, newProject = false) {
   $("#f-object").value = project.object;
   $("#f-measure").value = project.measure;
   $("#f-kind").value = project.kind;
-  renderProjectTypeGuidance();
-  $("#f-planning-depth").value = project.planningDepth || "detail";
+  $("#f-horizon-start").value = project.horizonStartYear || project.startYear || CURRENT_YEAR;
+  $("#f-horizon-duration").value = project.horizonDurationYears || 1;
   $("#f-rough-finance").value = project.roughFinanceK ?? "";
-  renderPlanningDepthGuidance();
+  $("#f-project-order").value = project.projectOrderStatus || (project.kind === "Bauprojekt" ? "offen" : "nicht erforderlich");
   $("#f-phase").value = project.currentPhaseKey;
   $("#f-next").value = project.nextDecision || "";
   setRoleSelect("#f-gs", project.roles.gs, "offen");
   setRoleSelect("#f-bk", project.roles.bk, "offen");
   setRoleSelect("#f-vs", project.roles.vs, "nach Bedarf");
   setRoleSelect("#f-bhb", project.roles.bhb, "offen");
-  renderBKSummary();
   editPhasePlan = clone(project.phasePlan);
   editDemands = clone(project.demands);
   editFinances = clone(project.finances || []);
-  editGateHistory = clone(project.gateHistory).map(gate => ({ ...gate, persisted: true }));
+  editGateHistory = clone(project.gateHistory || []).map(gate => ({ ...gate, persisted: true }));
+  renderProjectTypeGuidance();
+  renderPlanningDepthGuidance();
+  renderBKSummary();
   $("#mother-cost-note").innerHTML = rawMotherCost(project)
     ? `<strong>Referenz ImmoTool / Excel: ${chf(rawMotherCost(project))}</strong><span>Dieser Referenzwert wird nie automatisch mit der Finanzplanung im BauRadar summiert.</span>`
-    : "<strong>Kein Referenzwert</strong><span>Finanzen können projektweit pro Jahr erfasst werden. Fehlende Finanzen blockieren keine Freigabe.</span>";
+    : "<strong>Kein Referenzwert</strong><span>Im 1–3-Jahres-Fenster werden Finanzen detailliert geführt.</span>";
   renderPhasePlanEditor();
   renderDemandEditor();
   renderFinanceEditor();
@@ -1173,27 +1383,42 @@ function openProject(id, newProject = false) {
   $("#project-dialog").showModal();
 }
 function setFormTab(name) {
-  $$("[data-form-tab]").forEach(button => button.classList.toggle("active", button.dataset.formTab === name));
+  const button = $$("[data-form-tab]").find(item => item.dataset.formTab === name);
+  if (button?.classList.contains("hidden")) name = "base";
+  $$("[data-form-tab]").forEach(item => item.classList.toggle("active", item.dataset.formTab === name));
   $$("[data-panel]").forEach(panel => panel.classList.toggle("hidden", panel.dataset.panel !== name));
 }
 function renderProjectTypeGuidance() {
   const selected = $("#f-kind").value;
+  const isBuildProject = selected === "Bauprojekt";
   $$('[data-project-type]').forEach(card => card.classList.toggle("active", card.dataset.projectType === selected));
+  $("#project-order-field").classList.toggle("hidden", !isBuildProject);
+  $("#f-owner-structure").textContent = isBuildProject ? "Projekt-Baukommission" : "Geschäftsstelle";
+  $("#f-owner-structure-note").textContent = isBuildProject
+    ? "Die Bauherrenverantwortung liegt gemäss Bauhandbuch bei der Projekt-Baukommission."
+    : "Bei Unterhaltsprojekten liegt die operative Verantwortung bei der Geschäftsstelle.";
+  renderPlanningDepthGuidance();
 }
 function renderPlanningDepthGuidance() {
-  const key = $("#f-planning-depth")?.value || "detail";
+  const key = currentEditorDepth();
   const info = PLANNING_DEPTHS[key] || PLANNING_DEPTHS.detail;
+  const isBuildProject = $("#f-kind")?.value === "Bauprojekt";
   $("#planning-depth-title").textContent = info.label;
   $("#planning-depth-description").textContent = info.description;
-  $("#f-detail-level").textContent = key === "detail" ? "vollständig" : key === "medium" ? "grob, aber steuerbar" : "strategische Perspektive";
+  $("#f-detail-level").textContent = key === "detail" ? "vollständig · " + info.accuracy : key === "medium" ? "Vorausschau · " + info.accuracy : "Perspektive · " + info.accuracy;
+  $("#rough-finance-accuracy").textContent = `Handbuch: erwartete Kostengenauigkeit ${info.accuracy}.`;
   $("#rough-finance-field").classList.toggle("hidden", key === "detail");
+  $("#detail-current-phase").classList.toggle("hidden", key !== "detail" || !isBuildProject);
   $("#project-dialog").classList.toggle("planning-medium", key === "medium");
   $("#project-dialog").classList.toggle("planning-light", key === "light");
-  $$("[data-form-tab]").forEach(button => {
-    const relaxed = key !== "detail" && ["resources", "gates"].includes(button.dataset.formTab);
-    button.classList.toggle("relaxed", relaxed);
-    button.title = relaxed ? "In diesem Planungshorizont optional" : "";
+
+  $$("[data-detail-tab]").forEach(button => {
+    const tab = button.dataset.formTab;
+    const allowed = key === "detail" && (isBuildProject || ["resources", "money"].includes(tab));
+    button.classList.toggle("hidden", !allowed);
   });
+  const active = $("[data-form-tab].active");
+  if (active?.classList.contains("hidden")) setFormTab("base");
 }
 function renderCapacityYearSummary() {
   const values = $$("[data-capacity-month] .cy-pt").map(input => input.value).filter(value => value !== "");
@@ -1332,10 +1557,7 @@ $("#project-detail").addEventListener("click", event => {
 $("#edit-selected").addEventListener("click", () => openProject(selectedId));
 $("#new-project").addEventListener("click", () => openProject(null, true));
 $("#f-kind").addEventListener("change", renderProjectTypeGuidance);
-$("#f-planning-depth").addEventListener("change", () => {
-  renderPlanningDepthGuidance();
-  renderFinanceEditor();
-});
+[$("#f-horizon-start"), $("#f-horizon-duration")].forEach(input => input.addEventListener("input", renderPlanningDepthGuidance));
 $("#f-phase").addEventListener("change", () => {
   syncEditors();
   const selected = $("#f-phase").value;
@@ -1357,6 +1579,10 @@ $("#phase-plan-editor").addEventListener("change", event => {
     toast("Die aktuelle Projektphase kann nicht «Keine Tätigkeit» sein.");
   }
   renderPhasePlanEditor();
+});
+$("#phase-close-editor").addEventListener("change", () => {
+  syncEditors();
+  renderPhaseCloseEditor();
 });
 $("#expand-long").addEventListener("click", () => { longOpen = !longOpen; renderLongHorizon(); });
 $$("[data-form-tab]").forEach(button => button.addEventListener("click", () => {
@@ -1419,7 +1645,15 @@ $("#finance-editor").addEventListener("click", event => {
 });
 $("#add-gate").addEventListener("click", () => {
   syncEditors();
-  editGateHistory.push({ id: uuid("gate"), phaseKey: $("#f-phase").value, status: "geplant", authority: "BK", date: "", reason: "", conditions: "", nextPhase: "" });
+  const currentIndex = phaseIndex($("#f-phase").value);
+  const gateKey = currentIndex <= phaseIndex("machbarkeit") ? "tor1" : currentIndex <= phaseIndex("planung") ? "tor2" : "tor3";
+  const definition = gateDefinition(gateKey);
+  editGateHistory.push({ id: uuid("gate"), gateKey, phaseKey: definition.afterPhase, status: "geplant", authority: "Gesamtvorstand", date: "", reason: "", conditions: "", legacyGate: false });
+  renderGateEditor();
+});
+$("#gate-editor").addEventListener("change", event => {
+  if (!event.target.matches(".g-key")) return;
+  syncEditors();
   renderGateEditor();
 });
 $("#gate-editor").addEventListener("click", event => {
@@ -1436,9 +1670,12 @@ $("#project-form").addEventListener("submit", event => {
   syncEditors();
   const id = $("#project-id").value;
   const existing = projects().find(item => item.id === id);
-  const currentPhaseKey = $("#f-phase").value;
-  const planningDepth = $("#f-planning-depth").value || "detail";
-  const phaseErrors = planningDepth === "detail" ? phasePlanIssues({ phasePlan: editPhasePlan, currentPhaseKey }) : [];
+  const currentPhaseKey = canonicalPhaseKey($("#f-phase").value || "anlass");
+  const planningDepth = currentEditorDepth();
+  const isBuildProject = $("#f-kind").value === "Bauprojekt";
+  const phaseErrors = planningDepth === "detail" && isBuildProject
+    ? phasePlanIssues({ phasePlan: editPhasePlan, currentPhaseKey })
+    : [];
   const editorErrors = validateProjectEditors();
   if (phaseErrors.length || editorErrors.length) {
     const message = phaseErrors[0] || editorErrors[0];
@@ -1447,11 +1684,11 @@ $("#project-form").addEventListener("submit", event => {
       ? "phases"
       : message.startsWith("Finanzen")
         ? "money"
-        : message.startsWith("Phasentor")
+        : (message.startsWith("Tor ") || message.startsWith("Phasentor"))
           ? "gates"
-          : (message.includes("Verantwortung") || message.includes("Ressourcenbedarf"))
-            ? "phases"
-            : "resources";
+          : message.includes("Ressource")
+            ? "resources"
+            : "base";
     setFormTab(targetTab);
     return;
   }
@@ -1463,8 +1700,11 @@ $("#project-form").addEventListener("submit", event => {
     object: $("#f-object").value.trim(),
     measure: $("#f-measure").value.trim(),
     kind: $("#f-kind").value,
+    horizonStartYear: Number($("#f-horizon-start").value) || CURRENT_YEAR,
+    horizonDurationYears: Number($("#f-horizon-duration").value) || 1,
     planningDepth,
     roughFinanceK: $("#f-rough-finance").value,
+    projectOrderStatus: isBuildProject ? $("#f-project-order").value : "nicht erforderlich",
     currentPhaseKey,
     currentAssignee: "",
     nextDecision: $("#f-next").value.trim(),
@@ -1486,9 +1726,10 @@ $("#project-form").addEventListener("submit", event => {
   selectedId = id;
   save(existing ? "Projektplanung geändert" : "Projekt erstellt");
   $("#project-dialog").close();
-  const warningShown = focusProjectResourceWarning(project);
+  const warningShown = effectivePlanningDepth(project) === "detail" ? focusProjectResourceWarning(project) : false;
   if (!warningShown) toast("Projektplanung gespeichert");
 });
+
 $("#delete-project").addEventListener("click", () => {
   const id = $("#project-id").value;
   const project = projects().find(item => item.id === id);
@@ -1622,7 +1863,7 @@ $("#import-backup").addEventListener("change", async event => {
 });
 
 $("#export-projects").addEventListener("click", () => csv("BGR_BauRadar_Projekte_und_Phasen.csv", [
-  ["Arbeitsstand", "Projekt ID", "Objekt", "Projektart", "Mutterstand", "Aktueller Stand", "Verantwortung Baukommission", "Projektphase", "Status", "Start", "Ende"],
+  ["Arbeitsstand", "Projekt ID", "Objekt", "Projektkategorie", "Mutterstand", "Aktueller Stand", "Vertretung Allgemeine Baukommission", "Projektphase", "Status", "Start", "Ende"],
   ...projects().flatMap(project => project.phasePlan.map(row => [state.mode === "scenario" ? activeWorkspace().name : "Scharfer Stand", project.id, project.object, project.kind, phaseInfo(project.motherPhaseKey).label, phaseInfo(project.currentPhaseKey).label, project.roles?.bk || "", phaseInfo(row.phaseKey).label, PHASE_STATUS[row.status] || row.status, row.startQuarter, row.endQuarter]))
 ]));
 $("#export-resources").addEventListener("click", () => csv("BGR_BauRadar_Ressourcenbedarf.csv", [
