@@ -1019,11 +1019,41 @@ function setRoleSelect(selector, value, emptyLabel) {
   const isEmpty = ["offen", "nach bedarf", "noch nicht definiert"].includes(normalized.toLowerCase());
   $(selector).innerHTML = roleOptions(isEmpty ? "" : normalized, emptyLabel);
 }
+function formalGateAfterPhase(phaseKey) {
+  return FORMAL_GATES.find(gate => gate.afterPhase === phaseKey);
+}
 function renderPhasePlanEditor() {
   $("#phase-plan-editor").innerHTML = editPhasePlan.map((row, index) => {
     const noActivity = row.status === "none";
-    return `<div class="phase-plan-row ${phaseInfo(row.phaseKey).className} ${noActivity ? "no-activity" : ""}" data-phase-plan="${index}"><div><i></i><strong>${phaseInfo(row.phaseKey).label}</strong><span>${noActivity ? "Für die BGR ist in dieser Phase keine Tätigkeit vorgesehen." : index === 1 ? "Danach Entscheid Gesamtvorstand" : index === 3 ? "Danach Projektfreigabe Gesamtvorstand" : "Entscheid im Kompetenzrahmen"}</span></div><label><span>Status</span><select class="pp-status">${phaseStatusOptions(row.status)}</select></label>${noActivity ? '<div class="no-activity-note"><strong>Keine Tätigkeit</strong><span>Die Phase bleibt sichtbar. Zeitraum und Ressourcen sind hier nicht erforderlich.</span></div>' : `<label><span>Start</span><select class="pp-start">${quarterOptions(row.startQuarter)}</select></label><label><span>Ende</span><select class="pp-end">${quarterOptions(row.endQuarter)}</select></label>`}</div>`;
+    const formalGate = formalGateAfterPhase(row.phaseKey);
+    const decisionNote = formalGate
+      ? `${formalGate.label}: Vorstand nach dieser Phase`
+      : "Phasenabschluss: Allgemeine Baukommission";
+    return `<div class="phase-plan-row ${phaseInfo(row.phaseKey).className} ${noActivity ? "no-activity" : ""}" data-phase-plan="${index}">
+      <div><i></i><strong>${phaseInfo(row.phaseKey).label}</strong><span>${noActivity ? "Für die BGR ist in dieser Phase keine Tätigkeit vorgesehen." : decisionNote}</span></div>
+      <label><span>Status</span><select class="pp-status">${phaseStatusOptions(row.status)}</select></label>
+      ${noActivity ? '<div class="no-activity-note"><strong>Keine Tätigkeit</strong><span>Die Phase bleibt sichtbar. Zeitraum und Ressourcen sind hier nicht erforderlich.</span></div>' : `<label><span>Start</span><select class="pp-start">${quarterOptions(row.startQuarter)}</select></label><label><span>Ende</span><select class="pp-end">${quarterOptions(row.endQuarter)}</select></label>`}
+    </div>`;
   }).join("");
+  renderPhaseCloseEditor();
+}
+function closeReviewOptions(selected = "") {
+  return `<option value="" ${selected === "" ? "selected" : ""}>offen</option><option value="ok" ${selected === "ok" ? "selected" : ""}>erfüllt</option><option value="clarify" ${selected === "clarify" ? "selected" : ""}>Klärung nötig</option>`;
+}
+function renderPhaseCloseEditor() {
+  const relevant = editPhasePlan
+    .map((row, index) => ({ row, index }))
+    .filter(item => item.row.status === "done" || item.row.status === "current");
+  $("#phase-close-editor").innerHTML = relevant.length ? relevant.map(({ row, index }) => {
+    const review = row.closeReview || emptyCloseReview();
+    const state = phaseCloseState(row);
+    const stateLabel = state === "ready" ? "bereit für nächste Phase" : state === "clarify" ? "Klärung nötig" : "Prüfung offen";
+    return `<article class="phase-close-card ${state}" data-phase-close="${index}">
+      <div class="phase-close-head"><div><strong>${esc(phaseInfo(row.phaseKey).label)}</strong><span>${row.status === "done" ? "Phasenabschluss" : "Aktuelle Phase · Prüfung vorbereiten"}</span></div><b>${esc(stateLabel)}</b></div>
+      <div class="phase-close-grid">${PHASE_CLOSE_FIELDS.map(field => `<label title="${esc(field.question)}"><span>${esc(field.label)}</span><select data-close-field="${field.key}">${closeReviewOptions(review[field.key] || "")}</select><small>${esc(field.question)}</small></label>`).join("")}</div>
+      <div class="form-grid two"><label><span>Prüfdatum</span><input class="close-date" type="date" value="${esc(review.date || "")}"></label><label><span>Bemerkung</span><input class="close-note" value="${esc(review.note || "")}" placeholder="nur falls nötig"></label></div>
+    </article>`;
+  }).join("") : '<div class="empty-note">Noch keine aktuelle oder abgeschlossene Phase für die Abschlussprüfung.</div>';
 }
 function renderBKSummary() {
   const summary = $("#f-bk-summary");
@@ -1102,11 +1132,37 @@ function updateFinanceAmountPreviews() {
     target.textContent = value == null ? "z. B. 50 = CHF 50’000" : `= ${chf(value * 1000)}`;
   });
 }
+function gateDefinition(key) {
+  return FORMAL_GATES.find(gate => gate.key === key) || FORMAL_GATES[0];
+}
+function renderFormalGatesOverview() {
+  const target = $("#formal-gates-overview");
+  if (!target) return;
+  target.innerHTML = FORMAL_GATES.map(definition => {
+    const latest = editGateHistory
+      .filter(gate => gate.gateKey === definition.key && !gate.legacyGate)
+      .slice()
+      .sort((a,b) => String(b.date || "").localeCompare(String(a.date || "")))[0];
+    const status = latest?.status || "offen";
+    return `<article class="formal-gate ${esc(status.replace(/\s+/g,"-"))}"><span>${esc(definition.label)}</span><strong>${esc(definition.timing)}</strong><small>${esc(definition.decision)}</small><b>${esc(status)}</b></article>`;
+  }).join("");
+}
 function renderGateEditor() {
-  $("#gate-editor").innerHTML = editGateHistory.length ? editGateHistory.map((gate, index) => {
+  renderFormalGatesOverview();
+  const formalEntries = editGateHistory.map((gate,index)=>({gate,index})).filter(item => item.gate.gateKey && !item.gate.legacyGate);
+  $("#gate-editor").innerHTML = formalEntries.length ? formalEntries.map(({ gate, index }) => {
     const locked = gate.persisted ? "disabled" : "";
-    return `<div class="gate-history-row" data-gate="${index}"><label><span>Phase</span><select class="g-phase" ${locked}>${phaseOptions(gate.phaseKey)}</select></label><label><span>Entscheid</span><select class="g-status" ${locked}>${options(GATE_STATUSES, gate.status)}</select></label><label><span>Instanz</span><select class="g-authority" ${locked}>${options(GATE_AUTHORITIES, gate.authority)}</select></label><label><span>Datum</span><input class="g-date" type="date" value="${esc(gate.date)}" ${locked}></label><label><span>Kurzbegründung</span><input class="g-reason" value="${esc(gate.reason || "")}" ${locked}></label><label><span>Auflagen</span><input class="g-conditions" value="${esc(gate.conditions || "")}" ${locked}></label><label><span>Nächste Phase</span><select class="g-next" ${locked}><option value="">keine</option>${phaseOptions(gate.nextPhase)}</select></label>${gate.persisted ? '<span class="history-lock">protokolliert</span>' : `<button type="button" class="remove" data-remove-gate="${index}">×</button>`}</div>`;
-  }).join("") : '<div class="empty-note">Noch kein Phasentorentscheid protokolliert.</div>';
+    const definition = gateDefinition(gate.gateKey);
+    return `<div class="gate-history-row handbook-gate" data-gate="${index}">
+      <label><span>Phasentor</span><select class="g-key" ${locked}>${FORMAL_GATES.map(item => `<option value="${item.key}" ${item.key === gate.gateKey ? "selected" : ""}>${item.label} · ${item.timing}</option>`).join("")}</select></label>
+      <div class="gate-decision-text"><span>Entscheid Gesamtvorstand</span><strong>${esc(definition.decision)}</strong></div>
+      <label><span>Entscheid</span><select class="g-status" ${locked}>${options(GATE_STATUSES, gate.status)}</select></label>
+      <label><span>Datum</span><input class="g-date" type="date" value="${esc(gate.date || "")}" ${locked}></label>
+      <label><span>Kurzbegründung</span><input class="g-reason" value="${esc(gate.reason || "")}" ${locked}></label>
+      <label><span>Auflagen</span><input class="g-conditions" value="${esc(gate.conditions || "")}" ${locked}></label>
+      ${gate.persisted ? '<span class="history-lock">protokolliert</span>' : `<button type="button" class="remove" data-remove-gate="${index}">×</button>`}
+    </div>`;
+  }).join("") : '<div class="empty-note">Noch kein formeller Vorstandsentscheid protokolliert.</div>';
 }
 function syncEditors() {
   editPhasePlan = $$("[data-phase-plan]").map((row, index) => {
