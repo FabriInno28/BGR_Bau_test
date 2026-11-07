@@ -18,7 +18,9 @@ import {
   OFFICE_UNASSIGNED,
   allocateOfficeDemand,
   isOfficeUnassigned,
-  canonicalDemandName
+  canonicalDemandName,
+  canonicalPhaseKey,
+  planningHorizon
 } from "./model.js";
 
 function capacities(values) {
@@ -185,6 +187,7 @@ test("bereits phasenweise erfasste Verantwortung bleibt erhalten", () => {
     ]
   });
   assert.equal(phasePlan[0].assignee, "Alex");
+  assert.equal(phasePlan[1].phaseKey, "ausfuehrung");
   assert.equal(phasePlan[1].assignee, "TRESTO");
 });
 
@@ -296,12 +299,12 @@ test("Zuteilung aus Gruppentopf erhält die Gesamt-PT und senkt den Gruppenrest"
 
 test("Zuteilung bleibt in der Projektphase und überschreibt andere Phasen nicht", () => {
   const before = [
-    { id: "gs", name: OFFICE_UNASSIGNED, phaseKey: "realisierung", remainingPt: "10" },
+    { id: "gs", name: OFFICE_UNASSIGNED, phaseKey: "ausfuehrung", remainingPt: "10" },
     { id: "mark-alt", name: "Mark", phaseKey: "planung", remainingPt: "4" }
   ];
   const after = allocateOfficeDemand(before, { groupId: "gs", person: "Mark", pt: 3, newId: "mark-bau" });
   assert.equal(after.find(row => row.id === "mark-alt").remainingPt, "4");
-  assert.equal(after.find(row => row.id === "mark-bau").phaseKey, "realisierung");
+  assert.equal(after.find(row => row.id === "mark-bau").phaseKey, "ausfuehrung");
   assert.equal(after.find(row => row.id === "gs").remainingPt, "7");
 });
 
@@ -323,8 +326,8 @@ test("Alte Gruppennennung bei Bedarfsimport wird als noch nicht zugeteilt gelese
 });
 
 
-test("Schema 8 bleibt mit den Geschäftsstelle-Ressourcen kompatibel", () => {
-  assert.equal(SCHEMA_VERSION, 9);
+test("Schema 10 bleibt mit den Geschäftsstelle-Ressourcen kompatibel", () => {
+  assert.equal(SCHEMA_VERSION, 10);
   assert.equal(CAPACITY_RESOURCES.includes("Roli"), true);
   assert.equal(CAPACITY_RESOURCES.includes("Mark"), true);
   assert.equal(CAPACITY_RESOURCES.includes("Stefan"), true);
@@ -379,4 +382,51 @@ test("Zuteilung aus Geschäftsstelle übernimmt Stunden pro PT und lässt Ansatz
   assert.equal(assigned.hoursPerPt, 8);
   assert.equal(assigned.hourlyRate, "");
   assert.equal(assigned.remainingPt, "4");
+});
+
+
+test("alte Vergabe und Realisierung werden zur Handbuchphase zusammengeführt", () => {
+  const migrated = migrateState({
+    projects: [{
+      id: "p-phase",
+      currentPhaseKey: "realisierung",
+      phasePlan: [
+        { phaseKey: "vergabe", status: "done", startQuarter: "2027-Q1", endQuarter: "2027-Q2" },
+        { phaseKey: "realisierung", status: "current", startQuarter: "2027-Q3", endQuarter: "2028-Q1" }
+      ],
+      demands: [
+        { id: "d1", name: "Mark", phaseKey: "vergabe", remainingPt: "3" },
+        { id: "d2", name: "Roli", phaseKey: "realisierung", remainingPt: "4" }
+      ]
+    }]
+  });
+  const project = migrated.projects[0];
+  assert.equal(project.currentPhaseKey, "ausfuehrung");
+  assert.equal(project.phasePlan.length, 1);
+  assert.equal(project.phasePlan[0].phaseKey, "ausfuehrung");
+  assert.equal(project.phasePlan[0].startQuarter, "2027-Q1");
+  assert.equal(project.phasePlan[0].endQuarter, "2028-Q1");
+  assert.deepEqual(project.demands.map(item => item.phaseKey), ["ausfuehrung", "ausfuehrung"]);
+});
+
+test("Handbuchhorizont wird rollend aus dem Startjahr abgeleitet", () => {
+  assert.equal(planningHorizon(2029, 2026), "detail");
+  assert.equal(planningHorizon(2030, 2026), "medium");
+  assert.equal(planningHorizon(2036, 2026), "medium");
+  assert.equal(planningHorizon(2037, 2026), "light");
+});
+
+test("Tor 3 wird nach abgeschlossenem Projektabschluss verlangt", () => {
+  const issues = validatePhaseTransitions({
+    currentPhaseKey: "abschluss",
+    phasePlan: [{ phaseKey: "abschluss", status: "done", startQuarter: "2028-Q1", endQuarter: "2028-Q2" }],
+    gateHistory: []
+  });
+  assert.equal(issues[0].gateKey, "tor3");
+  assert.equal(issues[0].type, "notApproved");
+});
+
+test("alte Phase wird kanonisch auf die Handbuchphase abgebildet", () => {
+  assert.equal(canonicalPhaseKey("vergabe"), "ausfuehrung");
+  assert.equal(canonicalPhaseKey("realisierung"), "ausfuehrung");
 });
