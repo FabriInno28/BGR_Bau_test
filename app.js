@@ -9,6 +9,7 @@ import {
   isOfficeUnassigned,
   SCHEMA_VERSION,
   assessResourceCapacity,
+  canonicalPhaseKey,
   canonicalResourceName,
   clone,
   csvSafe,
@@ -16,6 +17,7 @@ import {
   migrateState,
   nullableNumberValue,
   phaseMonthWindow,
+  planningHorizon,
   numberValue,
   quarterIndex,
   resourceKey,
@@ -26,13 +28,26 @@ import {
 } from "./model.js";
 
 const PHASES = [
-  { key: "anlass", label: "Anlass / Prüfauftrag", short: "Anlass", className: "p1" },
+  { key: "anlass", label: "Anlass & Prüfauftrag", short: "Anlass", className: "p1" },
   { key: "machbarkeit", label: "Machbarkeitsstudie", short: "Machbarkeit", className: "p2" },
-  { key: "planerwahl", label: "Planerwahl", short: "Planerwahl", className: "p3" },
-  { key: "planung", label: "Planung / Projektierung", short: "Planung", className: "p4" },
-  { key: "vergabe", label: "Ausschreibung / Vergabe", short: "Vergabe", className: "p5" },
-  { key: "realisierung", label: "Realisierung", short: "Realisierung", className: "p6" },
-  { key: "abschluss", label: "Abschluss / Übergabe", short: "Abschluss", className: "p7" }
+  { key: "planerwahl", label: "Auswahl der Planenden", short: "Planendenwahl", className: "p3" },
+  { key: "planung", label: "Planung & Projektierung", short: "Planung", className: "p4" },
+  { key: "ausfuehrung", label: "Ausschreibung & Ausführung", short: "Ausführung", className: "p5" },
+  { key: "abschluss", label: "Übergabe & Projektabschluss", short: "Abschluss", className: "p6" }
+];
+
+const FORMAL_GATES = [
+  { key: "tor1", label: "Tor 1", afterPhase: "machbarkeit", timing: "Nach der Machbarkeitsstudie", decision: "Strategische Ausrichtung bestätigen, Variante wählen sowie Auswahl der Planenden und Planungsauftrag freigeben." },
+  { key: "tor2", label: "Tor 2", afterPhase: "planung", timing: "Nach Planung & Projektierung", decision: "Über die Realisierung entscheiden und Kredit sowie Terminplan bewilligen." },
+  { key: "tor3", label: "Tor 3", afterPhase: "abschluss", timing: "Nach Übergabe & Projektabschluss", decision: "Bauabrechnung genehmigen und das Projekt formell abschliessen." }
+];
+
+const PHASE_CLOSE_FIELDS = [
+  { key: "goal", label: "Ziel", question: "Ist das Ziel weiterhin richtig und mit Immobilienstrategie und Portfolio abgestimmt?" },
+  { key: "result", label: "Ergebnis", question: "Sind die erforderlichen Unterlagen vollständig und entscheidungsreif?" },
+  { key: "organization", label: "Organisation", question: "Passt die Organisation zu Bedeutung, Risiken und Komplexität des Projekts?" },
+  { key: "resources", label: "Ressourcen", question: "Sind Finanzierung, Personal und Zeit für die nächste Phase gesichert?" },
+  { key: "changes", label: "Veränderungen", question: "Sind wesentliche Änderungen bei Kosten, Terminen, Risiken oder Abhängigkeiten berücksichtigt?" }
 ];
 
 const COST_STATUSES = [
@@ -43,7 +58,6 @@ const COST_STATUSES = [
 ];
 
 const GATE_STATUSES = ["geplant", "freigegeben", "mit Auflagen", "zurückgestellt", "gestoppt"];
-const GATE_AUTHORITIES = ["BK", "BHB", "Gesamtvorstand", "Geschäftsstelle"];
 const MONTH_NAMES = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"];
 const TODAY = new Date();
 const CURRENT_YEAR = TODAY.getFullYear();
@@ -71,13 +85,14 @@ const PHASE_STATUS = {
   done: "Abgeschlossen",
   none: "Keine Tätigkeit"
 };
-const STORE_KEY = "bgr-bauradar-v9";
-const PREVIOUS_STORE_KEY = "bgr-bauradar-v8";
-const OLDER_STORE_KEY = "bgr-bauradar-v7";
-const LEGACY_STORE_KEY = "bgr-bauradar-v5";
-const OLDEST_STORE_KEY = "bgr-bauradar-v4";
-const VERY_OLD_STORE_KEY = "bgr-portfolio-cockpit-v3";
-const HISTORY_KEY = "bgr-bauradar-v9-history";
+const STORE_KEY = "bgr-bauradar-v10";
+const PREVIOUS_STORE_KEY = "bgr-bauradar-v9";
+const OLDER_STORE_KEY = "bgr-bauradar-v8";
+const LEGACY_STORE_KEY = "bgr-bauradar-v7";
+const OLDEST_STORE_KEY = "bgr-bauradar-v5";
+const VERY_OLD_STORE_KEY = "bgr-bauradar-v4";
+const ANCIENT_STORE_KEY = "bgr-portfolio-cockpit-v3";
+const HISTORY_KEY = "bgr-bauradar-v10-history";
 
 const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
@@ -243,7 +258,7 @@ function reconcileBaselineProjects(savedProjects, deletedIds = []) {
 }
 function loadState() {
   try {
-    const raw = localStorage.getItem(STORE_KEY) || localStorage.getItem(PREVIOUS_STORE_KEY) || localStorage.getItem(OLDER_STORE_KEY) || localStorage.getItem(LEGACY_STORE_KEY) || localStorage.getItem(OLDEST_STORE_KEY) || localStorage.getItem(VERY_OLD_STORE_KEY);
+    const raw = localStorage.getItem(STORE_KEY) || localStorage.getItem(PREVIOUS_STORE_KEY) || localStorage.getItem(OLDER_STORE_KEY) || localStorage.getItem(LEGACY_STORE_KEY) || localStorage.getItem(OLDEST_STORE_KEY) || localStorage.getItem(VERY_OLD_STORE_KEY) || localStorage.getItem(ANCIENT_STORE_KEY);
     if (!raw) return emptyState();
     const parsed = JSON.parse(raw);
     const migrated = migrateState(parsed, BASELINE);
